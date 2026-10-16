@@ -1,0 +1,27 @@
+{
+  "name": "remote-claude-mobile",
+  "private": true,
+  "version": "0.4.0",
+  "type": "module",
+  "description": "Phone app (PWA) for Claude Code on your VPS, served by rcc serve",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "npm run typecheck && vite build",
+    "deploy:local": "rm -rf ../vps-agent/web && cp -r dist ../vps-agent/web && rm -rf ../desktop/resources/mobile-web && cp -r dist ../desktop/resources/mobile-web"
+  },
+  "dependencies": {
+    "@novnc/novnc": "^1.7.0",
+    "dompurify": "^3.4.17",
+    "marked": "^18.1.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}

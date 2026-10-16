@@ -1,0 +1,87 @@
+{
+  "name": "remote-claude",
+  "productName": "Remote Claude",
+  "version": "0.4.0",
+  "description": "Desktop client for Claude Code running on your VPS",
+  "main": "dist/main/index.js",
+  "author": "you",
+  "license": "MIT",
+  "scripts": {
+    "build:main": "esbuild src/main/index.ts src/main/preload.ts --bundle --platform=node --target=node20 --outdir=dist/main --external:electron --external:ssh2 --external:cpu-features --format=cjs",
+    "build:renderer": "vite build",
+    "build": "npm run typecheck && npm run build:main && npm run build:renderer",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dev": "npm run build:main && vite build && electron .",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux AppImage"
+  },
+  "build": {
+    "appId": "dev.remoteclaude.app",
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "identity": null,
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "asarUnpack": [
+      "node_modules/ssh2/**",
+      "node_modules/cpu-features/**"
+    ],
+    "npmRebuild": false,
+    "directories": {
+      "output": "release"
+    },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+  },
+  "dependencies": {
+    "@novnc/novnc": "^1.7.0",
+    "@types/qrcode": "^1.5.6",
+    "dompurify": "^3.4.17",
+    "marked": "^18.1.1",
+    "qrcode": "^1.5.4",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "ssh2": "^1.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/ssh2": "^1.15.6",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^44.8.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}

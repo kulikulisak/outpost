@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<style>
+:root{
+  --bg:#ffffff; --side:#f6f6f7; --line:#ececee; --text:#18181b; --muted:#71717a; --faint:#a1a1aa;
+  --hover:#ececef; --active:#e7e7ea; --card:#fafafa; --accent:#d97757; --green:#16a34a;
+  --add:#ecfdf3; --addt:#15803d; --del:#fef2f2; --delt:#b91c1c; --chip:#f4f4f5; --shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06);
+}
+body.dark{
+  --bg:#141416; --side:#1b1b1e; --line:#2a2a2e; --text:#ececee; --muted:#a1a1aa; --faint:#6b6b73;
+  --hover:#26262a; --active:#2c2c31; --card:#1c1c1f; --accent:#e08a6a; --green:#4ade80;
+  --add:#11261a; --addt:#6ee7a0; --del:#2a1416; --delt:#fca5a5; --chip:#232327; --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1440px;height:900px;overflow:hidden}
+body{font-family:"Inter","Noto Sans CJK SC",sans-serif;font-size:14px;color:var(--text);background:#d9dbe0;-webkit-font-smoothing:antialiased;padding:28px}
+body.dark{background:#0a0a0b}
+.win{width:100%;height:100%;border-radius:12px;overflow:hidden;display:flex;background:var(--bg);box-shadow:0 30px 80px rgba(0,0,0,.25);border:1px solid var(--line)}
+.side{width:264px;background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:14px 10px}
+.lights{display:flex;gap:8px;padding:2px 6px 18px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.newbtn{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;color:var(--text);font-weight:500}
+.newbtn:hover{background:var(--hover)}
+.kbd{margin-left:auto;font-size:11px;color:var(--faint)}
+.sec{display:flex;align-items:center;justify-content:space-between;padding:18px 10px 6px;font-size:12px;color:var(--faint);font-weight:500}
+.proj{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;color:var(--text);font-weight:500}
+.proj .chev{color:var(--faint);width:10px;font-size:10px}
+.proj .cnt{margin-left:auto;font-size:12px;color:var(--faint);font-weight:400}
+.sess{display:flex;align-items:center;gap:8px;padding:7px 10px 7px 30px;border-radius:8px;color:var(--muted);font-size:13.5px}
+.sess.on{background:var(--active);color:var(--text)}
+.sess .t{margin-left:auto;font-size:12px;color:var(--faint)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}
+.br{font-size:11px;padding:1px 6px;border-radius:5px;background:var(--chip);color:var(--muted);font-family:"JetBrains Mono","DejaVu Sans Mono",monospace}
+.foot{margin-top:auto;border-top:1px solid var(--line);padding:12px 10px 2px;display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+.foot .g{width:7px;height:7px;border-radius:50%;background:var(--green)}
+.foot .ic{margin-left:auto;display:flex;gap:12px;color:var(--faint)}
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.top{height:52px;display:flex;align-items:center;padding:0 22px;border-bottom:1px solid var(--line);gap:10px}
+.top h1{font-size:14px;font-weight:600}
+.top .path{font-size:12.5px;color:var(--faint)}
+.top .r{margin-left:auto;display:flex;gap:8px}
+.pill{display:flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;border:1px solid var(--line);font-size:12.5px;color:var(--text);background:var(--bg)}
+.pill .m{color:var(--faint)}
+.chat{flex:1;overflow:hidden;padding:30px 0 0}
+.col{width:760px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+.user{align-self:flex-end;max-width:520px;background:var(--chip);padding:11px 15px;border-radius:16px 16px 4px 16px;line-height:1.6}
+.ai{line-height:1.75;color:var(--text)}
+.ai p+p{margin-top:8px}
+code{font-family:"JetBrains Mono","DejaVu Sans Mono",monospace;font-size:12.5px;background:var(--chip);padding:1px 5px;border-radius:4px}
+.tool{border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden}
+.th{display:flex;align-items:center;gap:10px;padding:10px 14px;font-size:13px}
+.th .k{font-weight:600}
+.th .f{font-family:"JetBrains Mono","DejaVu Sans Mono",monospace;font-size:12.5px;color:var(--muted)}
+.th .s{margin-left:auto;font-size:12px;color:var(--faint);display:flex;gap:10px;align-items:center}
+.plus{color:var(--addt)} .minus{color:var(--delt)}
+.diff{border-top:1px solid var(--line);font-family:"JetBrains Mono","DejaVu Sans Mono",monospace;font-size:12.5px;line-height:1.75;padding:6px 0;background:var(--bg)}
+.diff div{padding:0 14px;white-space:pre;display:flex}
+.diff .n{width:34px;color:var(--faint);text-align:right;padding-right:14px;user-select:none}
+.diff .a{background:var(--add);color:var(--addt)}
+.diff .d{background:var(--del);color:var(--delt)}
+.ok{width:16px;height:16px;border-radius:50%;background:var(--green);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px}
+.think{font-size:13px;color:var(--faint);display:flex;align-items:center;gap:8px}
+.comp{padding:14px 0 22px}
+.box{width:760px;margin:0 auto;border:1px solid var(--line);border-radius:18px;background:var(--bg);box-shadow:var(--shadow);padding:14px 14px 10px}
+.ph{color:var(--faint);padding:2px 4px 14px;font-size:14.5px}
+.bar{display:flex;align-items:center;gap:6px}
+.chip{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;font-size:12.5px;color:var(--muted)}
+.chip.b{background:var(--chip)}
+.send{margin-left:auto;width:32px;height:32px;border-radius:50%;background:var(--text);color:var(--bg);display:flex;align-items:center;justify-content:center;font-size:15px}
+.hint{text-align:center;font-size:11.5px;color:var(--faint);margin-top:10px}
+svg{display:block}
+</style></head>
+<body class="__THEME__">
+<div class="win">
+  <aside class="side">
+    <div class="lights"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div>
+    <div class="newbtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>新建会话<span class="kbd">⌘N</span></div>
+    <div class="sec">项目<span style="font-size:15px">＋</span></div>
+    <div class="proj"><span class="chev">▾</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>blog-api</div>
+    <div class="sess on"><span class="dot"></span>修复登录超时<span class="t"><span class="br">fix-login</span></span></div>
+    <div class="sess">添加分页接口<span class="t">2 小时</span></div>
+    <div class="sess">重构数据库层<span class="t">昨天</span></div>
+    <div class="proj" style="margin-top:4px"><span class="chev">▸</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>landing-page<span class="cnt">2</span></div>
+    <div class="proj"><span class="chev">▸</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>scripts<span class="cnt">1</span></div>
+    <div class="foot"><span class="g"></span>eu-fra-01
+      <span class="ic">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+      </span></div>
+  </aside>
+
+  <main class="main">
+    <div class="top">
+      <h1>修复登录超时</h1><span class="path">~/code/blog-api</span>
+      <div class="r"><div class="pill" style="border:none;color:var(--muted)">⎇ fix-login</div></div>
+    </div>
+
+    <div class="chat"><div class="col">
+      <div class="user">登录 30 分钟后会被踢出，查一下 session 过期逻辑，顺便修掉。</div>
+      <div class="think"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>思考了 8 秒 · 读取 3 个文件</div>
+      <div class="ai"><p>找到了。<code>session.ts</code> 里刷新 token 时用的是创建时间而不是最后活动时间，所以不管你是否在用，30 分钟一到就过期。改成滑动过期：</p></div>
+      <div class="tool">
+        <div class="th"><span class="k">编辑</span><span class="f">src/auth/session.ts</span><span class="s"><span class="plus">+3</span><span class="minus">−2</span><span>⌃</span></span></div>
+        <div class="diff">
+          <div><span class="n">41</span>  const ttl = 30 * 60 * 1000;</div>
+          <div class="d"><span class="n">42</span>- const expiresAt = session.createdAt + ttl;</div>
+          <div class="d"><span class="n">43</span>- if (Date.now() &gt; expiresAt) return expire(session);</div>
+          <div class="a"><span class="n">42</span>+ const expiresAt = session.lastSeenAt + ttl;</div>
+          <div class="a"><span class="n">43</span>+ if (Date.now() &gt; expiresAt) return expire(session);</div>
+          <div class="a"><span class="n">44</span>+ session.lastSeenAt = Date.now();</div>
+        </div>
+      </div>
+      <div class="tool"><div class="th"><span class="ok">✓</span><span class="k">运行</span><span class="f">npm test -- auth</span><span class="s">24 通过 · 3.1s<span>⌄</span></span></div></div>
+      <div class="ai"><p>测试全部通过。现在只要你在 30 分钟内有任何请求，会话就会自动续期。</p></div>
+    </div></div>
+
+    <div class="comp">
+      <div class="box">
+        <div class="ph">继续追问，或输入 / 使用命令</div>
+        <div class="bar">
+          <div class="chip"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/></svg></div>
+          <div class="chip b"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>每次询问 ▾</div>
+          <div class="chip" style="margin-left:auto;color:var(--text)"><span style="color:var(--accent)">✳</span>Opus 5.5<span style="color:var(--faint)">⌄</span></div><div class="chip" style="color:var(--text)">高<span style="color:var(--faint)">⌄</span></div><div class="send" style="margin-left:4px">↑</div>
+        </div>
+      </div>
+      <div class="hint">运行在 eu-fra-01 · Claude Code v2.1.293</div>
+    </div>
+  </main>
+</div>
+</body></html>

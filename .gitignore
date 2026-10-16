@@ -1,0 +1,12 @@
+node_modules/
+dist/
+!vps-agent/web/
+release/
+*.log
+.DS_Store
+desktop/test/__pycache__/
+work/
+files/
+*.tar.gz
+sandbox-setup.sh
+mobile/test/__pycache__/

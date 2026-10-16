@@ -1,0 +1,122 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
+:root{
+  --bg:#ffffff; --side:#f6f6f7; --line:#ececee; --text:#18181b; --muted:#71717a; --faint:#a1a1aa;
+  --hover:#ececef; --active:#e7e7ea; --card:#fafafa; --accent:#d97757; --green:#16a34a;
+  --add:#ecfdf3; --addt:#15803d; --del:#fef2f2; --delt:#b91c1c; --chip:#f4f4f5; --shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06);
+}
+body.dark{
+  --bg:#141416; --side:#1b1b1e; --line:#2a2a2e; --text:#ececee; --muted:#a1a1aa; --faint:#6b6b73;
+  --hover:#26262a; --active:#2c2c31; --card:#1c1c1f; --accent:#e08a6a; --green:#4ade80;
+  --add:#11261a; --addt:#6ee7a0; --del:#2a1416; --delt:#fca5a5; --chip:#232327; --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1440px;height:900px;overflow:hidden}
+body{font-family:"Inter","Noto Sans CJK SC",sans-serif;font-size:14px;color:var(--text);background:#d9dbe0;-webkit-font-smoothing:antialiased;padding:28px}
+body.dark{background:#0a0a0b}
+.win{width:100%;height:100%;border-radius:12px;overflow:hidden;display:flex;background:var(--bg);box-shadow:0 30px 80px rgba(0,0,0,.25);border:1px solid var(--line)}
+.side{width:264px;background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:14px 10px}
+.lights{display:flex;gap:8px;padding:2px 6px 18px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.newbtn{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;color:var(--text);font-weight:500}
+.newbtn:hover{background:var(--hover)}
+.kbd{margin-left:auto;font-size:11px;color:var(--faint)}
+.sec{display:flex;align-items:center;justify-content:space-between;padding:18px 10px 6px;font-size:12px;color:var(--faint);font-weight:500}
+.proj{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;color:var(--text);font-weight:500}
+.proj .chev{color:var(--faint);width:10px;font-size:10px}
+.proj .cnt{margin-left:auto;font-size:12px;color:var(--faint);font-weight:400}
+.sess{display:flex;align-items:center;gap:8px;padding:7px 10px 7px 30px;border-radius:8px;color:var(--muted);font-size:13.5px}
+.sess.on{background:var(--active);color:var(--text)}
+.sess .t{margin-left:auto;font-size:12px;color:var(--faint)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}
+.br{font-size:11px;padding:1px 6px;border-radius:5px;background:var(--chip);color:var(--muted);font-family:"JetBrains Mono","DejaVu Sans Mono",monospace}
+.foot{margin-top:auto;border-top:1px solid var(--line);padding:12px 10px 2px;display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+.foot .g{width:7px;height:7px;border-radius:50%;background:var(--green)}
+.foot .ic{margin-left:auto;display:flex;gap:12px;color:var(--faint)}
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.top{height:52px;display:flex;align-items:center;padding:0 22px;border-bottom:1px solid var(--line);gap:10px}
+.top h1{font-size:14px;font-weight:600}
+.top .path{font-size:12.5px;color:var(--faint)}
+.top .r{margin-left:auto;display:flex;gap:8px}
+.pill{display:flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;border:1px solid var(--line);font-size:12.5px;color:var(--text);background:var(--bg)}
+.pill .m{color:var(--faint)}
+.chat{flex:1;overflow:hidden;padding:30px 0 0}
+.col{width:760px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+.user{align-self:flex-end;max-width:520px;background:var(--chip);padding:11px 15px;border-radius:16px 16px 4px 16px;line-height:1.6}
+.ai{line-height:1.75;color:var(--text)}
+.ai p+p{margin-top:8px}
+code{font-family:"JetBrains Mono","DejaVu Sans Mono",monospace;font-size:12.5px;background:var(--chip);padding:1px 5px;border-radius:4px}
+.tool{border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden}
+.th{display:flex;align-items:center;gap:10px;padding:10px 14px;font-size:13px}
+.th .k{font-weight:600}
+.th .f{font-family:"JetBrains Mono","DejaVu Sans Mono",monospace;font-size:12.5px;color:var(--muted)}
+.th .s{margin-left:auto;font-size:12px;color:var(--faint);display:flex;gap:10px;align-items:center}
+.plus{color:var(--addt)} .minus{color:var(--delt)}
+.diff{border-top:1px solid var(--line);font-family:"JetBrains Mono","DejaVu Sans Mono",monospace;font-size:12.5px;line-height:1.75;padding:6px 0;background:var(--bg)}
+.diff div{padding:0 14px;white-space:pre;display:flex}
+.diff .n{width:34px;color:var(--faint);text-align:right;padding-right:14px;user-select:none}
+.diff .a{background:var(--add);color:var(--addt)}
+.diff .d{background:var(--del);color:var(--delt)}
+.ok{width:16px;height:16px;border-radius:50%;background:var(--green);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px}
+.think{font-size:13px;color:var(--faint);display:flex;align-items:center;gap:8px}
+.comp{padding:14px 0 22px}
+.box{width:760px;margin:0 auto;border:1px solid var(--line);border-radius:18px;background:var(--bg);box-shadow:var(--shadow);padding:14px 14px 10px}
+.ph{color:var(--faint);padding:2px 4px 14px;font-size:14.5px}
+.bar{display:flex;align-items:center;gap:6px}
+.chip{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;font-size:12.5px;color:var(--muted)}
+.chip.b{background:var(--chip)}
+.send{margin-left:auto;width:32px;height:32px;border-radius:50%;background:var(--text);color:var(--bg);display:flex;align-items:center;justify-content:center;font-size:15px}
+.hint{text-align:center;font-size:11.5px;color:var(--faint);margin-top:10px}
+svg{display:block}
+</style><style>
+.nav{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--muted);font-size:13.5px}
+.nav.on{background:var(--active);color:var(--text);font-weight:500}
+.nav svg{opacity:.8}
+.back{display:flex;align-items:center;gap:8px;padding:6px 10px 14px;color:var(--muted);font-size:13px}
+.pg{flex:1;overflow:hidden;padding:44px 0}
+.pc{width:680px;margin:0 auto}
+.pc h2{font-size:22px;font-weight:600;letter-spacing:-.01em}
+.pc .sub{color:var(--muted);margin-top:6px;font-size:13.5px}
+.grp{margin-top:28px}
+.grp h3{font-size:12px;color:var(--faint);font-weight:500;margin-bottom:8px;padding-left:2px}
+.list{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.row{display:flex;align-items:center;gap:14px;padding:14px 16px;border-top:1px solid var(--line);min-height:58px}
+.row:first-child{border-top:none}
+.row .l{flex:1}
+.row .l b{font-weight:500;display:block}
+.row .l span{display:block;font-size:12.5px;color:var(--faint);margin-top:2px}
+.sel{display:flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--bg)}
+.sel .m{color:var(--faint)}
+.tog{width:36px;height:21px;border-radius:999px;background:var(--line);position:relative}
+.tog::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.tog.on{background:var(--text)} .tog.on::after{left:17px;background:var(--bg)}
+.btn{padding:7px 13px;border-radius:8px;border:1px solid var(--line);font-size:13px;background:var(--bg)}
+.btn.p{background:var(--text);color:var(--bg);border-color:var(--text)}
+.st{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)}
+.st i{width:7px;height:7px;border-radius:50%;background:var(--green);display:block}
+.st.w i{background:#e5a50a}
+.mono{font-family:"JetBrains Mono","DejaVu Sans Mono",monospace;font-size:12.5px}
+.seg{display:flex;background:var(--chip);border-radius:8px;padding:2px}
+.seg span{padding:5px 11px;border-radius:6px;font-size:12.5px;color:var(--muted)}
+.seg span.on{background:var(--bg);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.08);font-weight:500}
+</style><style>
+.av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;color:#fff;flex:none}
+.row .l b .tag,.tag{display:inline-block;margin-top:0;font-size:11px;padding:2px 7px;border-radius:999px;background:var(--chip);color:var(--muted);margin-left:6px;font-weight:500}
+.tag.cur{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+.tag.lim{background:var(--del);color:var(--delt)}
+.meter{width:150px}.meter .t span{white-space:nowrap;display:inline!important;margin:0!important}
+.meter .b{height:5px;border-radius:999px;background:var(--chip);overflow:hidden}
+.meter .b i{display:block;height:100%;background:var(--text)}
+.meter .t{gap:8px;font-size:11.5px;color:var(--faint);margin-top:5px;display:flex;justify-content:space-between}
+.ib{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--muted);border:1px solid var(--line)}
+.brow{font-size:12px;color:var(--faint);display:flex;align-items:center;gap:5px;margin-top:3px}
+.drag{color:var(--faint);font-size:12px;letter-spacing:-2px;width:10px}
+.row .l b .tag.cur{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}.row .l b .tag.lim{background:var(--del);color:var(--delt)}</style></head><body class="light"><div class="win">
+<aside class="side"><div class="lights"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div><div class="back">← 返回对话</div><div class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/></svg>服务器</div><div class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4"/></svg>环境</div><div class="nav on"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Claude 账号</div><div class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg>模型与对话</div><div class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>权限</div><div class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18" /></svg>外观</div>
+<div class="foot"><span class="g"></span>eu-fra-01<span class="ic" style="font-size:12px">v0.1.0</span></div></aside>
+<main class="main"><div class="pg"><div class="pc" style="width:760px"><div style="display:flex;align-items:flex-end"><div><h2>Claude 账号</h2><div class="sub">每个账号有自己的 Claude 配置和独立的 VPS 浏览器，Cookie 和登录状态互不干扰。对话历史所有账号共享。</div></div><div class="btn p" style="margin-left:auto;white-space:nowrap">＋ 添加账号</div></div>
+<div class="grp"><h3>账号（拖动调整自动切换顺序）</h3><div class="list"><div class="row"><span class="drag">⋮⋮</span><span style="font-size:12px;color:var(--faint);width:12px">1</span><div class="av" style="background:#d97757">工</div><div class="l"><b>工作<span class="tag cur">当前</span><span class="tag lim">额度用完</span></b><span>lin.work@gmail.com · Max 5x</span><div class="brow"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>独立浏览器 · Cookie 已保存</div></div><div class="meter"><div class="b"><i style="width:100%;background:var(--delt)"></i></div><div class="t"><span>5 小时 100%</span><span>18:00 重置</span></div></div><div class="ib" title="打开该账号的浏览器"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div><div class="ib">⋯</div></div><div class="row"><span class="drag">⋮⋮</span><span style="font-size:12px;color:var(--faint);width:12px">2</span><div class="av" style="background:#6366f1">个</div><div class="l"><b>个人</b><span>lin.home@outlook.com · Pro</span><div class="brow"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>独立浏览器 · Cookie 已保存</div></div><div class="meter"><div class="b"><i style="width:23%;"></i></div><div class="t"><span>5 小时 23%</span><span>21:40 重置</span></div></div><div class="btn">切换</div><div class="ib" title="打开该账号的浏览器"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div><div class="ib">⋯</div></div><div class="row"><span class="drag">⋮⋮</span><span style="font-size:12px;color:var(--faint);width:12px">3</span><div class="av" style="background:#0ea5e9">备</div><div class="l"><b>备用</b><span>lin.backup@proton.me · Pro</span><div class="brow"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>独立浏览器 · Cookie 已保存</div></div><div class="meter"><div class="b"><i style="width:4%;"></i></div><div class="t"><span>5 小时 4%</span><span>—</span></div></div><div class="btn">切换</div><div class="ib" title="打开该账号的浏览器"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div><div class="ib">⋯</div></div><div class="row"><span class="drag">⋮⋮</span><span style="font-size:12px;color:var(--faint);width:12px">4</span><div class="av" style="background:var(--chip);color:var(--muted)">新</div><div class="l"><b>测试<span class="tag">未登录</span></b><span>浏览器已创建，还没有登录</span></div><div class="btn p">登录</div><div class="ib">⋯</div></div></div></div>
+<div class="grp"><h3>额度用完时</h3><div class="list">
+<div class="row"><div class="l"><b>自动切换账号</b><span>按上面的顺序切到下一个有额度的账号，并在原会话里继续</span></div><div class="tog on"></div></div>
+<div class="row"><div class="l"><b>切换后重发最后一条消息</b><span>被额度打断的那条消息自动交给新账号</span></div><div class="tog on"></div></div>
+<div class="row"><div class="l"><b>额度恢复后切回</b><span>优先用排在前面的账号</span></div><div class="tog"></div></div>
+</div></div></div></div></main></div></body></html>
