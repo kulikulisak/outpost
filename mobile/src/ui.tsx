@@ -20,6 +20,9 @@ export const I = {
   kb: <svg className="i" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5" stroke="currentColor" strokeWidth="1.8" fill="none" />{P('M6 10h1M10 10h1M14 10h1M18 10h0M7 14h10')}</svg>,
   tabs: <svg className="i" viewBox="0 0 24 24"><rect x="4" y="7" width="13" height="13" rx="2.5" stroke="currentColor" strokeWidth="1.8" fill="none" />{P('M8 4h10a2 2 0 012 2v10')}</svg>,
   x: <svg className="i" viewBox="0 0 24 24" style={{ width: 18, height: 18 }}>{P('M6 6l12 12M18 6L6 18')}</svg>,
+  spark: <svg viewBox="0 0 24 24" style={{ width: 13, height: 13 }}><path d="M12 2.5l1.9 6.2 6.1-2.6-4 5.3 5.5 3.3-6.5.4.6 6.4L12 16.8l-3.6 4.7.6-6.4-6.5-.4 5.5-3.3-4-5.3 6.1 2.6z" fill="currentColor" /></svg>,
+  down: <svg className="i" viewBox="0 0 24 24" style={{ width: 14, height: 14 }}>{P('M6 9l6 6 6-6')}</svg>,
+  img: <svg className="i" viewBox="0 0 24 24" style={{ width: 14, height: 14 }}><rect x="3.5" y="4.5" width="17" height="15" rx="3" stroke="currentColor" strokeWidth="1.8" fill="none" />{P('M4 17l5-5 4 4 2.5-2.5L20 18')}<circle cx="15.5" cy="9" r="1.5" fill="currentColor" /></svg>,
   chev: <svg className="i" viewBox="0 0 24 24" style={{ width: 16, height: 16, color: 'var(--faint)' }}>{P('M9 6l6 6-6 6')}</svg>,
 };
 

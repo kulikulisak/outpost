@@ -34,6 +34,17 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
   }, [sid, resumeId]);
 
   const t = useMemo(() => buildTranscript([...hist, ...live]), [hist, live]);
+  // a user bubble, then everything Claude did until the next user message as one turn under its avatar
+  const groups = useMemo(() => {
+    const out: { user: boolean; items: Item[] }[] = [];
+    for (const it of t.items) {
+      if (it.kind === 'user') out.push({ user: true, items: [it] });
+      else if (it.kind === 'note' && !it.error) out.push({ user: true, items: [it] });
+      else { const last = out[out.length - 1]; if (last && !last.user) last.items.push(it); else out.push({ user: false, items: [it] }); }
+    }
+    if (t.busy && (!out.length || out[out.length - 1].user)) out.push({ user: false, items: [] });
+    return out;
+  }, [t.items, t.busy]);
   const running = !!sid && (meta ? meta.status === 'running' || meta.status === 'starting' : !t.exited);
   const cwd = 'cwd' in open ? open.cwd : meta?.cwd || '';
   const title = 'title' in open ? open.title : meta?.title || meta?.firstText || base(cwd);
@@ -140,10 +151,11 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
   };
 
   const [menu, setMenu] = useState(false);
-  const modelLabel = MODELS.find((m) => m.id === opts.model)?.label || '默认';
+  const resolved = prettyModel(t.resolvedModel || meta?.resolvedModel);
+  const modelLabel = (resolved && (!opts.model || resolved.toLowerCase().startsWith(opts.model)) ? resolved : opts.model ? MODELS.find((m) => m.id === opts.model)?.label : null) || '默认模型';
   const effortLabel = EFFORTS.find((e) => e.id === opts.effort)?.label || '';
   const permLabel = PERMS.find((p) => p.id === opts.permissionMode)?.label || '';
-  const sub = [base(meta?.repo || cwd), meta?.worktree || null, prettyModel(t.resolvedModel)].filter(Boolean).join(' · ');
+  const sub = [base(meta?.repo || cwd), meta?.worktree || null].filter(Boolean).join(' · ');
 
   return (
     <div className="page">
@@ -156,8 +168,15 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
         <div className="msgs">
           {loading && <div className="note">正在读取对话…</div>}
           {!loading && !t.items.length && <div className="note">{sid ? '会话已就绪，说点什么吧' : '这段对话还没有内容'}</div>}
-          {t.items.map((it) => <Row key={it.key} it={it} answered={answered} onAnswer={answer} accounts={accounts} onSwitchAccount={switchAccount} currentAccount={opts.account || meta?.account} />)}
-          {t.busy && running && <div className="think"><span className="pulse" />思考中</div>}
+          {groups.map((g, gi) => g.user
+            ? <Row key={g.items[0].key} it={g.items[0]} answered={answered} onAnswer={answer} accounts={accounts} onSwitchAccount={switchAccount} currentAccount={opts.account || meta?.account} cwd={cwd} />
+            : <div key={g.items[0]?.key || 'busy'} className="turn">
+                <div className="who"><span className="claude">{I.spark}</span>Claude</div>
+                <div className="tb">
+                  {g.items.map((it) => <Row key={it.key} it={it} answered={answered} onAnswer={answer} accounts={accounts} onSwitchAccount={switchAccount} currentAccount={opts.account || meta?.account} cwd={cwd} />)}
+                  {gi === groups.length - 1 && t.busy && running && <div className="think"><span className="dots"><i /><i /><i /></span>{t.items.length && t.items[t.items.length - 1].kind === 'tool' ? '正在处理' : '思考中'}</div>}
+                </div>
+              </div>)}
           {!running && sid && !loading && <div className="note">会话已结束，继续发消息会接着这段对话</div>}
         </div>
       </div>
@@ -168,8 +187,11 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
             onPaste={async (e) => { const fs = Array.from(e.clipboardData.files); if (fs.length) { e.preventDefault(); try { setAtts([...atts, ...(await toAtts(fs))]); } catch (er: any) { toast(er.message); } } }} />
           <div className="bar">
             <button className="mic" onClick={() => fileIn.current?.click()} aria-label="附件">{I.clip}</button>
-            <button className="chip" onClick={() => { optsAtOpen.current = opts; setShowOpts(true); }}>{modelLabel}{effortLabel ? ` · ${effortLabel}` : ''}</button>
-            <button className="chip" onClick={() => { optsAtOpen.current = opts; setShowOpts(true); }}>{permLabel}</button>
+            <button className="sel" onClick={() => { optsAtOpen.current = opts; setShowOpts(true); }}>
+              <span>{modelLabel}</span>{effortLabel && <em>{effortLabel}</em>}
+              {opts.permissionMode !== 'default' && <em className={opts.permissionMode === 'bypassPermissions' ? 'warn' : ''}>{permLabel}</em>}
+              {I.down}
+            </button>
             {SR && !t.busy && <button className={`mic ${listening ? 'on' : ''}`} style={{ marginLeft: 'auto' }} onClick={toggleMic} aria-label="语音输入">{I.mic}</button>}
             {t.busy && running && !text.trim() && !atts.length
               ? <button className="stop" onClick={interrupt} aria-label="停止"><i /></button>
@@ -196,19 +218,21 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
   );
 }
 
-function Row({ it, answered, onAnswer, accounts, onSwitchAccount, currentAccount }: {
-  it: Item; answered: Set<string>; onAnswer(req: string, d: 'allow' | 'deny', extra?: any): void; accounts: Account[]; onSwitchAccount(id: string): void; currentAccount?: string;
+function Row({ it, answered, onAnswer, accounts, onSwitchAccount, currentAccount, cwd = '' }: {
+  cwd?: string; it: Item; answered: Set<string>; onAnswer(req: string, d: 'allow' | 'deny', extra?: any): void; accounts: Account[]; onSwitchAccount(id: string): void; currentAccount?: string;
 }) {
   const [openTool, setOpenTool] = useState(false);
+  const rel = (x: string) => { const c = short(cwd); return c && x.startsWith(c + '/') ? x.slice(c.length + 1) : x; };
   switch (it.kind) {
     case 'user':
-      return <div className="u">{it.text}{it.files?.length ? <div className="files">{it.files.map((f, i) => <span key={i}>{f.image ? '🖼 ' : '📎 '}{f.name}</span>)}</div> : null}</div>;
+      return <div className="u">{it.text}{it.files?.length ? <div className="files">{it.files.map((f, i) => <span key={i}>{f.image ? I.img : I.clip}{f.name}</span>)}</div> : null}</div>;
     case 'text': return <Markdown text={it.text} />;
-    case 'thinking': return <div className="thinkbox">{it.text}</div>;
+    case 'thinking': return <details className="thinkbox"><summary>思考过程</summary><div>{it.text}</div></details>;
     case 'note': return <div className={`note ${it.error ? 'err' : ''}`}>{it.text}</div>;
     case 'perm': {
       const done = it.outcome || answered.has(it.req);
       const tt = toolTitle(it.tool, it.input || {});
+      if (done) return <div className={`permdone ${it.outcome === 'deny' ? 'no' : ''}`}>{it.outcome === 'deny' ? '已拒绝' : '已允许'} · {tt.verb} <span className="mono">{rel(tt.target).slice(0, 80)}</span></div>;
       return (
         <div className="permcard">
           <div><b>{done ? (it.outcome === 'deny' ? '已拒绝' : it.outcome === 'allow' ? '已允许' : '已回复') : '需要批准'}</b> · {tt.verb} <span className="mono" style={{ fontSize: 12.5 }}>{tt.target.slice(0, 160)}</span></div>
@@ -237,7 +261,7 @@ function Row({ it, answered, onAnswer, accounts, onSwitchAccount, currentAccount
       return (
         <div className="tool">
           <button className="h" onClick={() => setOpenTool((o) => !o)}>
-            <b>{tt.verb}</b><span className="tg">{tt.target}</span>
+            <b>{tt.verb}</b><span className="tg">{rel(tt.target)}</span>
             <span className="r">{!it.done ? <span className="spin" /> : it.isError ? <span className="bad">失败</span> : diff ? <span className="ok">+{adds} −{dels}</span> : <span className="ok">✓</span>}</span>
           </button>
           {diff && (openTool || diff.length <= 8) && <div className="diff mono">{diff.slice(0, 400).map((d, i) => <div key={i} className={d.t === '+' ? 'p' : d.t === '-' ? 'm' : ''}>{d.t} {d.s}</div>)}</div>}
