@@ -89,7 +89,7 @@ export function FileCards({ paths, cwd }: { paths: string[]; cwd: string }) {
     const name = rel.split('/').pop() || rel;
     const viewable = /^(image|pdf|text|media)$/.test(k.icon);
     const dir = rel.includes('/') ? rel.split('/').slice(0, -1).join('/') : '';
-    return { key: rel, title: name, sub: dir || k.label, badge: (name.split('.').pop() || '').toUpperCase(), color: KIND_COLOR[k.icon], thumb: rel in thumbs ? thumbs[rel] : undefined,
+    return { key: rel, title: name, sub: dir || undefined, badge: (name.split('.').pop() || '').toUpperCase(), color: KIND_COLOR[k.icon], thumb: rel in thumbs ? thumbs[rel] : undefined,
       actions: [{ label: '打开', primary: true, run: () => fileAct(abs(rel), name, viewable, 'open') }, ...(canShare ? [{ label: '分享', run: () => fileAct(abs(rel), name, viewable, 'share') }] : []), { label: '保存', run: () => fileAct(abs(rel), name, viewable, 'save') }] };
   });
   return <Deck items={items} />;

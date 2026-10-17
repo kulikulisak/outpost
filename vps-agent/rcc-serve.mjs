@@ -28,7 +28,7 @@ const MROOT = path.join(ROOT, 'mobile');
 const SESS = path.join(ROOT, 'sessions');
 const RCC = process.env.RCC_BIN || (fs.existsSync(path.join(HERE, 'rcc')) ? path.join(HERE, 'rcc') : path.join(HERE, 'rcc.mjs'));
 const WEB_DIRS = [path.join(MROOT, 'web'), path.join(HERE, 'web')];
-const VERSION = '0.7.2';
+const VERSION = '0.7.3';
 const F = { cfg: path.join(MROOT, 'config.json'), dev: path.join(MROOT, 'devices.json'), pair: path.join(MROOT, 'pair.json'), subs: path.join(MROOT, 'push.json') };
 
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');

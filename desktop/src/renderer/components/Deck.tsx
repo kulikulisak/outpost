@@ -19,7 +19,7 @@ export interface DeckItem {
 }
 
 // alternate small tilts so the row reads as a loose fan, not a grid
-const TILT = [-4, 3, -2, 4, -3, 2, -1];
+const TILT = [-2.5, 1.5, -1, 2, -1.5, 1, -0.5];
 
 export function Deck({ items }: { items: DeckItem[] }) {
   const [open, setOpen] = useState<{ item: DeckItem; from: DOMRect } | null>(null);
@@ -31,7 +31,7 @@ export function Deck({ items }: { items: DeckItem[] }) {
           <button
             key={it.key}
             className="pcard"
-            style={{ ['--i' as any]: i, ['--r' as any]: `${items.length === 1 ? -2 : TILT[i % TILT.length]}deg` }}
+            style={{ ['--i' as any]: i, ['--r' as any]: `${items.length === 1 ? -1.5 : TILT[i % TILT.length]}deg` }}
             onClick={(e) => setOpen({ item: it, from: (e.currentTarget as HTMLElement).getBoundingClientRect() })}
             title={it.title}
           >
@@ -73,9 +73,9 @@ function Lightbox({ item, from, onClose }: { item: DeckItem; from: DOMRect; onCl
     const dx = from.left + from.width / 2 - (to.left + to.width / 2);
     const dy = from.top + from.height / 2 - (to.top + to.height / 2);
     el.animate([
-      { transform: `translate(${dx}px, ${dy}px) scale(${from.width / to.width}) rotate(-3deg)`, opacity: 0.4 },
+      { transform: `translate(${dx}px, ${dy}px) scale(${from.width / to.width}) rotate(-1.5deg)`, opacity: 0.5 },
       { transform: 'none', opacity: 1 },
-    ], { duration: 340, easing: 'cubic-bezier(.2,.9,.25,1.12)' });
+    ], { duration: 420, easing: 'cubic-bezier(.22,1,.36,1)' });
     const k = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
     window.addEventListener('keydown', k, true);
     return () => window.removeEventListener('keydown', k, true);

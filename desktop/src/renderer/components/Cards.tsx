@@ -57,7 +57,7 @@ export function FileCards({ paths, cwd }: { paths: string[]; cwd: string }) {
     const k = fileKind(rel);
     const name = rel.split('/').pop() || rel;
     const dir = rel.includes('/') ? rel.split('/').slice(0, -1).join('/') : '';
-    return { key: rel, title: name, sub: dir || k.label, badge: (name.split('.').pop() || '').toUpperCase(), color: KIND_COLOR[k.icon], thumb: rel in thumbs ? thumbs[rel] : undefined,
+    return { key: rel, title: name, sub: dir || undefined, badge: (name.split('.').pop() || '').toUpperCase(), color: KIND_COLOR[k.icon], thumb: rel in thumbs ? thumbs[rel] : undefined,
       actions: [{ label: '打开', primary: true, run: () => rc.files.open(abs(rel)) }, { label: '保存到电脑', run: async () => { await rc.files.save(abs(rel)); } }] };
   });
   return <Deck items={items} />;
