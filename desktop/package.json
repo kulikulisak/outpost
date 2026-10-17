@@ -1,7 +1,7 @@
 {
-  "name": "remote-claude",
-  "productName": "Remote Claude",
-  "version": "0.4.1",
+  "name": "outpost",
+  "productName": "Outpost",
+  "version": "0.4.2",
   "description": "Desktop client for Claude Code running on your VPS",
   "main": "dist/main/index.js",
   "author": "you",

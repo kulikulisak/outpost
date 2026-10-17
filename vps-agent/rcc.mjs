@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// rcc — Remote Claude Code helper. Runs on the VPS; the desktop client drives it over SSH.
+// rcc — Outpost helper. Runs on the VPS; the desktop client drives it over SSH.
 // No dependencies. Node >= 18. Needs tmux, and `claude` on PATH (or RCC_CLAUDE=/path/to/claude).
 //
 //   rcc doctor                                   versions / login state as JSON

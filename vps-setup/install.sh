@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Install or update Remote Claude on a VPS without the desktop app:
-#   curl -fsSL https://raw.githubusercontent.com/kulikulisak/claudevps/main/vps-setup/install.sh | bash
+# Install or update Outpost on a VPS without the desktop app:
+#   curl -fsSL https://raw.githubusercontent.com/kulikulisak/outpost/main/vps-setup/install.sh | bash
 # Installs dependencies + Claude Code (bootstrap.sh), the rcc helper, the phone server and the phone app,
 # then starts the phone server. Re-run any time to update.
 set -euo pipefail
-REPO="${RCC_REPO:-https://github.com/kulikulisak/claudevps}"
+REPO="${RCC_REPO:-https://github.com/kulikulisak/outpost}"
 BRANCH="${RCC_BRANCH:-main}"
 SRC="$HOME/.rcc/src"
 

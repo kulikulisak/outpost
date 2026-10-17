@@ -1,4 +1,4 @@
-# Remote Claude
+# Outpost
 
 Claude Code 跑在你的 VPS 上，这是它的桌面窗口。
 
@@ -14,7 +14,7 @@ Claude Code 跑在你的 VPS 上，这是它的桌面窗口。
 应用没有签名，第一次需要：右键应用 → 打开 → 打开。或者在终端执行：
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/Remote Claude.app"
+xattr -dr com.apple.quarantine "/Applications/Outpost.app"
 ```
 
 ## 功能

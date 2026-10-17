@@ -1,4 +1,4 @@
-# Remote Claude v0.4.0 — 手机端
+# Outpost v0.4.0 — 手机端
 
 ## 手机端（新）
 - PWA 网页 App，iPhone / 安卓添加到主屏幕后全屏使用，浅色 / 深色 / 跟随系统。

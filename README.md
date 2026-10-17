@@ -1,4 +1,4 @@
-# Remote Claude（claudevps）
+# Outpost（outpost）
 
 让 Claude Code 只运行在你的 VPS 上，用电脑和手机来驱动它。Claude 看到的 IP、浏览器、时区、文件系统都是 VPS 的；电脑和手机只发送文字和文件。
 
@@ -22,7 +22,7 @@
 ## 快速开始
 
 ### 用电脑端
-1. 从 [Releases](https://github.com/kulikulisak/claudevps/releases) 下载对应系统的安装包并解压打开（macOS 首次需要右键 → 打开）。
+1. 从 [Releases](https://github.com/kulikulisak/outpost/releases) 下载对应系统的安装包并解压打开（macOS 首次需要右键 → 打开）。
 2. 填 VPS 地址、用户名、SSH 私钥 → 保存并连接。
 3. 设置 → 环境 → 开始：自动安装缺的依赖和 Claude Code。
 4. 设置 → Claude 账号 → 登录：窗口里出现 VPS 上的浏览器，在里面登录 Claude。
@@ -30,7 +30,7 @@
 
 ### 只用 VPS + 手机（不装电脑端）
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kulikulisak/claudevps/main/vps-setup/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kulikulisak/outpost/main/vps-setup/install.sh | bash
 claude                 # 首次登录（或用电脑端登录）
 rcc serve tailscale    # 发布私网 HTTPS；手机装 Tailscale 登录同一账号
 rcc pair               # 终端显示二维码，手机相机扫一下

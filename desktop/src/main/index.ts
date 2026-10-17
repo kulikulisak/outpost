@@ -9,6 +9,9 @@ import os from 'node:os';
 import { prefs, secrets, servers } from './store';
 import type { OutFile, ServerConfig, ServerSecret, UpdateInfo } from '../shared/types';
 
+// renamed from "Remote Claude" in 0.4.2: keep using the old data folder so saved servers and keys carry over
+app.setPath('userData', path.join(app.getPath('appData'), 'Remote Claude'));
+
 let win: BrowserWindow | null = null;
 const emit = (channel: string, data: unknown) => { for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, data); };
 const remote = new Remote(emit);
@@ -17,7 +20,7 @@ function createWindow() {
   const isMac = process.platform === 'darwin';
   win = new BrowserWindow({
     width: 1360, height: 860, minWidth: 900, minHeight: 600,
-    title: 'Remote Claude',
+    title: 'Outpost',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#141416' : '#ffffff',
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 16, y: 16 },

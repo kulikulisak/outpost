@@ -317,7 +317,7 @@ function UpdateBox({ prefs, setPrefs }: { prefs: Prefs; setPrefs(p: Partial<Pref
           : <button className="btn" disabled={busy || !prefs.updateUrl} onClick={check}>{busy ? '检查中…' : '检查更新'}</button>}
       </Row>
       <Row t="更新地址" sub="GitHub Releases 的 API 地址（…/releases/latest），或返回 {version, notes, url} 的 JSON">
-        <input className="input" style={{ width: 300 }} placeholder="https://api.github.com/repos/你/remote-claude/releases/latest" value={url}
+        <input className="input" style={{ width: 300 }} placeholder="https://api.github.com/repos/你/outpost/releases/latest" value={url}
           onChange={(e) => setUrl(e.target.value)} onBlur={() => url !== prefs.updateUrl && setPrefs({ updateUrl: url.trim() })} />
       </Row>
     </div></div>

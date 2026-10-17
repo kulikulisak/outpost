@@ -1,4 +1,4 @@
-# Remote Claude 0.4.1
+# Outpost 0.4.1
 
 手机版对话界面美化：
 

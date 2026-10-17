@@ -1,4 +1,4 @@
-// Remote Claude service worker: app shell cache, push notifications, and Allow/Deny from the notification.
+// Outpost service worker: app shell cache, push notifications, and Allow/Deny from the notification.
 const SHELL = 'rcc-shell-v1';
 const AUTH = 'rcc-auth';
 
@@ -26,7 +26,7 @@ self.addEventListener('fetch', (e) => {
 
 self.addEventListener('push', (e) => {
   let m = {};
-  try { m = e.data ? e.data.json() : {}; } catch { m = { title: 'Remote Claude', body: e.data && e.data.text() }; }
+  try { m = e.data ? e.data.json() : {}; } catch { m = { title: 'Outpost', body: e.data && e.data.text() }; }
   e.waitUntil((async () => {
     if (m.kind === 'close') {
       for (const n of await self.registration.getNotifications({ tag: m.tag })) n.close();
@@ -47,7 +47,7 @@ self.addEventListener('push', (e) => {
       data: m,
     };
     if (m.kind === 'perm') opts.actions = [{ action: 'deny', title: '拒绝' }, { action: 'allow', title: '允许' }];
-    await self.registration.showNotification(m.title || 'Remote Claude', opts);
+    await self.registration.showNotification(m.title || 'Outpost', opts);
   })());
 });
 

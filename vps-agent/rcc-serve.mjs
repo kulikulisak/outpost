@@ -390,7 +390,7 @@ async function api(req, res, url, dev) {
   if (p === '/api/push/test' && M === 'POST') {
     const mine = readJ(F.subs, []).filter((s) => s.deviceId === dev.id);
     if (!mine.length) return send(res, 400, { error: '这台手机还没开通知' });
-    const st = await Promise.all(mine.map((s) => pushTo(s.sub, { kind: 'test', title: 'Remote Claude', body: '通知已打通 ✓', tag: 'test' }).catch((e) => String(e.message))));
+    const st = await Promise.all(mine.map((s) => pushTo(s.sub, { kind: 'test', title: 'Outpost', body: '通知已打通 ✓', tag: 'test' }).catch((e) => String(e.message))));
     return send(res, 200, { ok: true, status: st });
   }
   if (p === '/api/devices') return send(res, 200, devices().map(({ tokenHash, ...d }) => ({ ...d, me: d.id === dev.id })));
@@ -636,6 +636,6 @@ if (isMain) switch (cmd) {
   case 'revoke': revoke(String(arg)); out({ ok: true }); break;
   case 'url': if (arg !== undefined) saveCfg({ url: arg ? String(arg).replace(/\/+$/, '') : null }); out({ url: cfg().url }); break;
   case 'tailscale': await tailscale(a); break;
-  case 'push-test': await pushAll({ kind: 'test', title: 'Remote Claude', body: '通知已打通 ✓', tag: 'test' }); out({ ok: true }); break;
+  case 'push-test': await pushAll({ kind: 'test', title: 'Outpost', body: '通知已打通 ✓', tag: 'test' }); out({ ok: true }); break;
   default: die(`unknown serve command: ${cmd}`);
 }
