@@ -1,7 +1,7 @@
 {
   "name": "outpost",
   "productName": "Outpost",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Desktop client for Claude Code running on your VPS",
   "main": "dist/main/index.js",
   "author": "you",

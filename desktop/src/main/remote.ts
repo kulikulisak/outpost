@@ -216,8 +216,8 @@ echo "websockify=$(command -v websockify >/dev/null && echo 1)"`;
     }
     await this.rcc(`send ${q(sid)} --json`, JSON.stringify({ text, files: up }));
   }
-  async answer(sid: string, req: string, decision: string, message?: string) {
-    await this.rcc(`answer ${q(sid)} ${q(req)} ${q(decision)}${message ? ' ' + q(message) : ''}`);
+  async answer(sid: string, req: string, decision: string, message?: string, answers?: Record<string, string>) {
+    await this.rcc(`answer ${q(sid)} ${q(req)} ${q(decision)}${message ? ' ' + q(message) : ''}${answers ? ` --answers ${q(JSON.stringify(answers))}` : ''}`);
   }
   async interrupt(sid: string) { await this.rcc(`interrupt ${q(sid)}`); }
   async stop(sid: string) { await this.rcc(`stop ${q(sid)}`); }

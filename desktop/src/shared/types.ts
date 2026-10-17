@@ -171,7 +171,7 @@ export interface RcApi {
     send(sid: string, text: string, files?: OutFile[]): Promise<void>;
     subscribe(sid: string): Promise<void>;
     unsubscribe(sid: string): Promise<void>;
-    answer(sid: string, req: string, decision: 'allow' | 'deny', message?: string): Promise<void>;
+    answer(sid: string, req: string, decision: 'allow' | 'deny', message?: string, answers?: Record<string, string>): Promise<void>;
     interrupt(sid: string): Promise<void>;
     stop(sid: string): Promise<void>;
     restore(sid: string, checkpoint: string): Promise<void>;

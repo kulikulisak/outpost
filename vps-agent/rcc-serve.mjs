@@ -28,7 +28,7 @@ const MROOT = path.join(ROOT, 'mobile');
 const SESS = path.join(ROOT, 'sessions');
 const RCC = process.env.RCC_BIN || (fs.existsSync(path.join(HERE, 'rcc')) ? path.join(HERE, 'rcc') : path.join(HERE, 'rcc.mjs'));
 const WEB_DIRS = [path.join(MROOT, 'web'), path.join(HERE, 'web')];
-const VERSION = '0.5.0';
+const VERSION = '0.5.1';
 const F = { cfg: path.join(MROOT, 'config.json'), dev: path.join(MROOT, 'devices.json'), pair: path.join(MROOT, 'pair.json'), subs: path.join(MROOT, 'push.json') };
 
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
@@ -200,8 +200,11 @@ async function pushAll(msg) {
 const watch = new Map(); // sid -> { off, title, cwd }
 function metaOf(sid) { return readJ(path.join(SESS, sid, 'meta.json'), {}); }
 function sessTitle(m) { return m.title || (m.cwd ? path.basename(m.cwd) : '会话'); }
+const CJK = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
 function toolLine(name, input = {}) {
-  if (name === 'Bash') return `想运行 ${String(input.command || '').slice(0, 120)}`;
+  if (name === 'AskUserQuestion') return String(input.questions?.[0]?.question || '有个问题想问你').slice(0, 140);
+  if (name === 'ExitPlanMode') return '方案写好了，等你同意后开始动手';
+  if (name === 'Bash') return CJK.test(String(input.description || '')) ? `想要${String(input.description).slice(0, 80)}` : `想运行 ${String(input.command || '').slice(0, 120)}`;
   if (name === 'Edit' || name === 'MultiEdit' || name === 'Write') return `想修改 ${String(input.file_path || '').replace(/^\/(root|home\/[^/]+)\//, '~/')}`;
   if (name === 'WebFetch') return `想打开 ${input.url || ''}`;
   return `想使用 ${String(name).replace(/^mcp__/, '')}`;
@@ -227,7 +230,8 @@ function scanOnce(first) {
     for (const line of text.slice(0, lastNl).split('\n')) {
       let ev; try { ev = JSON.parse(line); } catch { continue; }
       if (ev.type === 'rcc_user') lastUserText.set(sid, String(ev.text || ''));
-      if (ev.type === 'rcc_permission_request') pushAll({ kind: 'perm', urgent: true, sid, req: ev.req, title: `${sessTitle(m)} · 需要批准`, body: toolLine(ev.tool_name, ev.input), tag: `perm-${ev.req}` }).catch(() => {});
+      if (ev.type === 'rcc_permission_request' && (ev.tool_name === 'AskUserQuestion' || ev.tool_name === 'ExitPlanMode')) pushAll({ kind: 'ask', urgent: true, sid, req: ev.req, title: `${sessTitle(m)} · ${ev.tool_name === 'AskUserQuestion' ? '等你选择' : '等你确认方案'}`, body: toolLine(ev.tool_name, ev.input), tag: `perm-${ev.req}` }).catch(() => {});
+      else if (ev.type === 'rcc_permission_request') pushAll({ kind: 'perm', urgent: true, sid, req: ev.req, title: `${sessTitle(m)} · 需要批准`, body: toolLine(ev.tool_name, ev.input), tag: `perm-${ev.req}` }).catch(() => {});
       else if (ev.type === 'rcc_permission_result') pushAll({ kind: 'close', tag: `perm-${ev.req}` }).catch(() => {});
       else if (ev.type === 'result') {
         const ok = !ev.is_error && (!ev.subtype || ev.subtype === 'success');
@@ -386,7 +390,7 @@ async function api(req, res, url, dev) {
     await rcc(['send', String(b.sid), '--json'], JSON.stringify({ text: String(b.text || ''), files }));
     return send(res, 200, { ok: true });
   }
-  if (p === '/api/answer' && M === 'POST') { const b = await readBody(req); await rcc(['answer', String(b.sid), String(b.req), b.decision === 'allow' ? 'allow' : 'deny', ...(b.message ? [String(b.message)] : []), ...(b.rule ? ['--rule', String(b.rule)] : [])]); return send(res, 200, { ok: true }); }
+  if (p === '/api/answer' && M === 'POST') { const b = await readBody(req); await rcc(['answer', String(b.sid), String(b.req), b.decision === 'allow' ? 'allow' : 'deny', ...(b.message ? [String(b.message)] : []), ...(b.rule ? ['--rule', String(b.rule)] : []), ...(b.answers ? ['--answers', JSON.stringify(b.answers)] : [])]); return send(res, 200, { ok: true }); }
   if (p === '/api/push/prefs' && M === 'POST') { const b = await readBody(req); const subs = readJ(F.subs, []); for (const s of subs) if (s.deviceId === dev.id) s.prefs = b.prefs || null; writeJ(F.subs, subs); return send(res, 200, { ok: true }); }
   if (p === '/api/restore' && M === 'POST') { const b = await readBody(req); return send(res, 200, await rccJ(['restore', String(b.sid), String(b.checkpoint)])); }
   if (p === '/api/preview' && M === 'POST') {

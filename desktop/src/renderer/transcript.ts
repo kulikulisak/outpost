@@ -216,8 +216,19 @@ const FRIENDLY_CMD: [RegExp, string][] = [
   [/^\s*(python3?|node)\s/, '运行一个程序'],
 ];
 /** One human sentence for a permission prompt, plus how careful the user should be. */
+const CJK = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
 export function humanPerm(tool: string, input: any): { text: string; risk: 'low' | 'mid' | 'high' } {
   switch (tool) {
+    case 'AskUserQuestion': return { text: '问你一个问题', risk: 'low' };
+    case 'ExitPlanMode': return { text: '按方案开始动手', risk: 'low' };
+    case 'Read': return { text: `查看文件「${baseName(input?.file_path)}」`, risk: 'low' };
+    case 'Glob': case 'Grep': case 'LS': return { text: '在项目里找东西', risk: 'low' };
+    case 'Task': case 'Agent': return { text: `派一个助手去${input?.description || '处理子任务'}`, risk: 'low' };
+    case 'Skill': return { text: `使用技能「${input?.skill || input?.command || ''}」`, risk: 'low' };
+    case 'TodoWrite': return { text: '更新计划清单', risk: 'low' };
+    case 'KillShell': case 'KillBash': case 'TaskStop': return { text: '停掉一个后台任务', risk: 'low' };
+    case 'BashOutput': case 'TaskOutput': case 'Monitor': return { text: '查看后台任务的输出', risk: 'low' };
+    case 'PowerShell': return { text: String(input?.description || '').trim() && CJK.test(input.description) ? input.description : '在服务器上运行一条命令', risk: 'mid' };
     case 'Write': return { text: `新建或覆盖文件「${baseName(input?.file_path)}」`, risk: 'low' };
     case 'Edit': case 'MultiEdit': return { text: `修改文件「${baseName(input?.file_path)}」`, risk: 'low' };
     case 'NotebookEdit': return { text: `修改笔记本「${baseName(input?.notebook_path)}」`, risk: 'low' };
@@ -229,7 +240,8 @@ export function humanPerm(tool: string, input: any): { text: string; risk: 'low'
       const hit = FRIENDLY_CMD.find(([re]) => re.test(cmd));
       const high = /(^|\s|;|&&)(sudo\s+)?rm\s+-[a-z]*r|git\s+push\s+.*(-f|--force)|\bmkfs\b|\bdd\s+if=|>\s*\/dev\/sd|\bshutdown\b|\breboot\b|curl[^|]*\|\s*(ba)?sh/.test(cmd);
       const mid = /\brm\b|git\s+push|\bsudo\b|\bapt(-get)?\b|\bsystemctl\b|\bdocker\b/.test(cmd);
-      return { text: desc || hit?.[1] || '在服务器上运行一条命令', risk: high ? 'high' : mid ? 'mid' : 'low' };
+      // Claude often writes the description in English: only show it when it's in the user's script
+      return { text: (CJK.test(desc) && desc) || hit?.[1] || '在服务器上运行一条命令', risk: high ? 'high' : mid ? 'mid' : 'low' };
     }
     default: return { text: `使用工具「${tool.replace(/^mcp__/, '')}」`, risk: 'mid' };
   }

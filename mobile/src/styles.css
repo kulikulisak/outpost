@@ -249,3 +249,10 @@ svg.i { width: 20px; height: 20px; flex: none; }
 .permcard.high { border-color: color-mix(in srgb, var(--red, #e5484d) 50%, transparent); background: color-mix(in srgb, var(--red, #e5484d) 7%, transparent); }
 .risk { margin-top: 10px; font-size: 13px; color: var(--red, #e5484d); }
 .more { margin-top: 12px; font-size: 13px; color: var(--faint); }
+.permcard.ask .askq { display: flex; flex-direction: column; gap: 6px; }
+.permcard.ask .askq + .askq { margin-top: 12px; }
+.permcard .opt { text-align: left; align-items: flex-start; padding: 9px 12px; border-radius: 11px; background: var(--bg); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.permcard .opt em { font-style: normal; font-size: 12.5px; color: var(--muted); }
+.permcard .opt.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--bg)); }
+.permcard .field { margin-top: 2px; }
+.permcard .acts button:disabled { opacity: .5; }

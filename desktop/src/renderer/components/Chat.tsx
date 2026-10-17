@@ -19,7 +19,7 @@ export interface ChatProps {
   onModel(v: string): void; onEffort(v: string): void; onPerm(v: string): void;
   onSend(text: string, files?: OutFile[]): Promise<void>;
   onInterrupt(): void;
-  onAnswer(req: string, d: 'allow' | 'deny'): void;
+  onAnswer(req: string, d: 'allow' | 'deny', extra?: { message?: string; answers?: Record<string, string> }): void;
   footer: string;
   banner?: React.ReactNode;
   accounts: Account[];
@@ -124,6 +124,8 @@ function humanStep(t: Extract<Item, { kind: 'tool' }>): string {
     case 'WebFetch': case 'WebSearch': return '上网查资料';
     case 'Task': case 'Agent': return '分派子任务';
     case 'TodoWrite': return '列计划';
+    case 'AskUserQuestion': return '等你回答';
+    case 'ExitPlanMode': return '等你确认方案';
     case 'Bash': return humanPerm('Bash', t.input).text.replace(/^在服务器上/, '');
     default: return '处理';
   }
@@ -248,8 +250,57 @@ function ToolCard({ it }: { it: Extract<Item, { kind: 'tool' }> }) {
   );
 }
 
+/** Claude's multiple-choice question (AskUserQuestion): picks go back as answers {question: label}. */
+function AskCard({ it, onAnswer }: { it: Extract<Item, { kind: 'perm' }>; onAnswer: ChatProps['onAnswer'] }) {
+  const qs: any[] = Array.isArray(it.input?.questions) ? it.input.questions : [];
+  const [pick, setPick] = useState<Record<string, string[]>>({});
+  const [other, setOther] = useState<Record<string, string>>({});
+  if (it.outcome) return <div className="note">{it.outcome === 'allow' ? '已回答' : '已跳过'}：{qs.map((q) => q.question).join('；').slice(0, 80)}</div>;
+  const toggle = (q: any, label: string) => setPick((p) => {
+    const cur = p[q.question] || [];
+    return { ...p, [q.question]: q.multiSelect ? (cur.includes(label) ? cur.filter((x) => x !== label) : [...cur, label]) : [label] };
+  });
+  const value = (q: any) => [...(pick[q.question] || []), ...(other[q.question]?.trim() ? [other[q.question].trim()] : [])].join(', ');
+  const ready = qs.length > 0 && qs.every((q) => value(q));
+  return (
+    <div className="perm ask">
+      {qs.map((q, i) => (
+        <div key={i} className="askq">
+          <div className="q">{q.question}</div>
+          <div className="opts">
+            {(q.options || []).map((o: any) => (
+              <button key={o.label} className={`opt ${(pick[q.question] || []).includes(o.label) ? 'on' : ''}`} onClick={() => toggle(q, o.label)}>
+                <b>{o.label}</b>{o.description && <span>{o.description}</span>}
+              </button>
+            ))}
+          </div>
+          <input className="input" placeholder="都不是？直接写你的想法" value={other[q.question] || ''} onChange={(e) => setOther((x) => ({ ...x, [q.question]: e.target.value }))} />
+        </div>
+      ))}
+      <div className="perm-actions">
+        <button className="btn p" disabled={!ready} onClick={() => onAnswer(it.req, 'allow', { answers: Object.fromEntries(qs.map((q) => [q.question, value(q)])) })}>回答</button>
+        <button className="btn" onClick={() => onAnswer(it.req, 'deny', { message: '用户跳过了这个问题，请按你认为最合适的方式继续，或者用文字再问一次。' })}>跳过</button>
+      </div>
+    </div>
+  );
+}
+
 function PermCard({ it, onAnswer }: { it: Extract<Item, { kind: 'perm' }>; onAnswer: ChatProps['onAnswer'] }) {
   void toolTitle;
+  if (it.tool === 'AskUserQuestion') return <AskCard it={it} onAnswer={onAnswer} />;
+  if (it.tool === 'ExitPlanMode') {
+    if (it.outcome) return <div className="note">{it.outcome === 'allow' ? '已同意方案，开始动手' : '方案未通过'}</div>;
+    return (
+      <div className="perm">
+        <div className="q">方案写好了，同意后开始动手</div>
+        {it.input?.plan && <Markdown text={String(it.input.plan)} />}
+        <div className="perm-actions">
+          <button className="btn p" onClick={() => onAnswer(it.req, 'allow')}>开始做</button>
+          <button className="btn" onClick={() => onAnswer(it.req, 'deny', { message: '用户想先改改方案，请问问他哪里需要调整。' })}>再改改</button>
+        </div>
+      </div>
+    );
+  }
   const [more, setMore] = useState(false);
   const h = humanPerm(it.tool, it.input || {});
   const detail = it.tool === 'Bash' ? it.input?.command : toolDiff(it.tool, it.input || {}) ? null : JSON.stringify(it.input, null, 2);

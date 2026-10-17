@@ -59,7 +59,7 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
   const pendingPerm = [...t.items].reverse().find((x) => x.kind === 'perm' && !x.outcome) as Extract<Item, { kind: 'perm' }> | undefined;
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [answered, setAnswered] = useState<Set<string>>(new Set());
-  const showPerm = pendingPerm && !dismissed.has(pendingPerm.req) && !answered.has(pendingPerm.req);
+  const showPerm = pendingPerm && pendingPerm.tool !== 'AskUserQuestion' && pendingPerm.tool !== 'ExitPlanMode' && !dismissed.has(pendingPerm.req) && !answered.has(pendingPerm.req);
   const answer = async (req: string, decision: 'allow' | 'deny', extra: { message?: string; rule?: string } = {}) => {
     setAnswered((s) => new Set(s).add(req));
     try { await api('/api/answer', { sid, req, decision, ...extra }); }
@@ -254,6 +254,8 @@ function stepWord(t: Extract<Item, { kind: 'tool' }>) {
     case 'WebFetch': case 'WebSearch': return '上网查资料';
     case 'Task': case 'Agent': return '分派子任务';
     case 'TodoWrite': return '列计划';
+    case 'AskUserQuestion': return '等你回答';
+    case 'ExitPlanMode': return '等你确认方案';
     case 'Bash': return humanPerm('Bash', t.input).text.replace(/^在服务器上/, '');
     default: return '处理';
   }
@@ -304,6 +306,17 @@ function Row({ it, answered, onAnswer, accounts, onSwitchAccount, currentAccount
     case 'changes': return <Changes it={it} sid={sid} busy={busy} />;
     case 'perm': {
       const done = it.outcome || answered.has(it.req);
+      if (it.tool === 'AskUserQuestion') return <AskCard it={it} done={!!done} onAnswer={onAnswer} />;
+      if (it.tool === 'ExitPlanMode') {
+        if (done) return <div className={`permdone ${it.outcome === 'deny' ? 'no' : ''}`}>{it.outcome === 'deny' ? '方案未通过' : '已同意方案'}</div>;
+        return (
+          <div className="permcard">
+            <div><b>方案写好了</b> · 同意后开始动手</div>
+            {it.input?.plan && <div style={{ marginTop: 8 }}><Markdown text={String(it.input.plan)} /></div>}
+            <div className="acts"><button onClick={() => onAnswer(it.req, 'deny', { message: '用户想先改改方案，请问问他哪里需要调整。' })}>再改改</button><button className="y" onClick={() => onAnswer(it.req, 'allow')}>开始做</button></div>
+          </div>
+        );
+      }
       const hp = humanPerm(it.tool, it.input || {});
       void rel;
       if (done) return <div className={`permdone ${it.outcome === 'deny' ? 'no' : ''}`}>{it.outcome === 'deny' ? '已拒绝' : '已允许'} · {hp.text}</div>;
@@ -345,6 +358,31 @@ function Row({ it, answered, onAnswer, accounts, onSwitchAccount, currentAccount
     }
   }
   return null;
+}
+
+function AskCard({ it, done, onAnswer }: { it: Extract<Item, { kind: 'perm' }>; done: boolean; onAnswer(req: string, d: 'allow' | 'deny', extra?: any): void }) {
+  const qs: any[] = Array.isArray(it.input?.questions) ? it.input.questions : [];
+  const [pick, setPick] = useState<Record<string, string[]>>({});
+  const [other, setOther] = useState<Record<string, string>>({});
+  if (done) return <div className={`permdone ${it.outcome === 'deny' ? 'no' : ''}`}>{it.outcome === 'deny' ? '已跳过' : '已回答'} · {qs.map((q) => q.question).join('；').slice(0, 60)}</div>;
+  const toggle = (q: any, l: string) => setPick((p) => { const c = p[q.question] || []; return { ...p, [q.question]: q.multiSelect ? (c.includes(l) ? c.filter((x) => x !== l) : [...c, l]) : [l] }; });
+  const val = (q: any) => [...(pick[q.question] || []), ...(other[q.question]?.trim() ? [other[q.question].trim()] : [])].join(', ');
+  const ready = qs.length > 0 && qs.every((q) => val(q));
+  return (
+    <div className="permcard ask">
+      {qs.map((q, i) => (
+        <div key={i} className="askq">
+          <b>{q.question}</b>
+          {(q.options || []).map((o: any) => <button key={o.label} className={`opt ${(pick[q.question] || []).includes(o.label) ? 'on' : ''}`} onClick={() => toggle(q, o.label)}><span>{o.label}</span>{o.description && <em>{o.description}</em>}</button>)}
+          <input className="field" placeholder="都不是？直接写你的想法" value={other[q.question] || ''} onChange={(e) => setOther((x) => ({ ...x, [q.question]: e.target.value }))} />
+        </div>
+      ))}
+      <div className="acts">
+        <button onClick={() => onAnswer(it.req, 'deny', { message: '用户跳过了这个问题，请按你认为最合适的方式继续，或者用文字再问一次。' })}>跳过</button>
+        <button className="y" disabled={!ready} onClick={() => onAnswer(it.req, 'allow', { answers: Object.fromEntries(qs.map((q) => [q.question, val(q)])) })}>回答</button>
+      </div>
+    </div>
+  );
 }
 
 function PermSheet({ it, title, onClose, onAnswer }: { it: Extract<Item, { kind: 'perm' }>; title: string; onClose(): void; onAnswer(req: string, d: 'allow' | 'deny', extra?: any): void }) {

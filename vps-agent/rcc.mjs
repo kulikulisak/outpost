@@ -117,7 +117,8 @@ const SIMPLE_PROMPT = [
   '和你对话的用户不会写代码，也看不懂代码。',
   '每完成一次请求，回复的最后一段用一到三句大白话说明：你做了什么、结果怎么看或怎么用。不要贴代码，不要用技术术语，用用户的语言。',
   '如果做的是网页或有界面的东西，把入口文件做成项目里的 index.html（或者说清楚是哪个 html 文件），并告诉用户点界面上的「预览」就能看到效果。需要启动开发服务器时，让它监听 127.0.0.1 并在回复里写出端口号。',
-  '遇到需要用户决定的事情，用选择题的方式问，不要问技术细节。',
+  '遇到需要用户决定的事情，用选择题的方式问（可以用提问工具给出选项），不要问技术细节。',
+  '调用命令行工具时，description 字段用用户的语言写一句白话（例如「安装做图表用的组件」），用户会在批准弹窗里看到它。',
 ].join('\n');
 
 async function run(sid) {
@@ -323,7 +324,7 @@ async function tail(sid, a) {
 }
 
 // ---------- permission answers ----------
-function answer(sid, req, decision, message, rule) {
+function answer(sid, req, decision, message, rule, answers) {
   readMeta(sid);
   if (!['allow', 'deny'].includes(decision)) die('decision must be allow|deny');
   if (rule && decision === 'allow') {
@@ -335,7 +336,9 @@ function answer(sid, req, decision, message, rule) {
     fs.writeFileSync(rf, JSON.stringify(rules));
   }
   const f = path.join(dir(sid), 'perm', `${req}.res.json`);
-  fs.writeFileSync(f + '.tmp', JSON.stringify({ decision, message: message || null }));
+  let ans = null;
+  if (answers) { try { ans = JSON.parse(String(answers)); } catch { die('bad --answers'); } }
+  fs.writeFileSync(f + '.tmp', JSON.stringify({ decision, message: message || null, answers: ans }));
   fs.renameSync(f + '.tmp', f);
   out({ ok: true });
 }
@@ -370,7 +373,8 @@ async function mcp(sid) {
         else await sleep(250);
       }
       const verdict = res?.decision === 'allow'
-        ? { behavior: 'allow', updatedInput: input }
+        // AskUserQuestion: the user's picks travel back as updatedInput.answers {question: label}
+        ? { behavior: 'allow', updatedInput: res.answers && typeof res.answers === 'object' ? { ...input, answers: res.answers } : input }
         : { behavior: 'deny', message: res?.message || (res ? 'User denied this action.' : 'No answer from the user in time.') };
       appendEvent(sid, { type: 'rcc_permission_result', req, behavior: verdict.behavior });
       return send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(verdict) }] } });
@@ -831,7 +835,7 @@ switch (cmd) {
   case 'run': await run(sid); break;
   case 'send': send(sid, readStdin(), a); break;
   case 'tail': await tail(sid, a); break;
-  case 'answer': answer(sid, rest[0], rest[1], rest.slice(2).join(' '), a.rule); break;
+  case 'answer': answer(sid, rest[0], rest[1], rest.slice(2).join(' '), a.rule, a.answers); break;
   case 'mcp': await mcp(sid); break;
   case 'list': list(); break;
   case 'stop': stop(sid); break;

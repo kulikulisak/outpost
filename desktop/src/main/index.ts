@@ -137,7 +137,7 @@ handle('claude:send', async (sid: string, text: string, files?: OutFile[]) => {
 });
 handle('claude:subscribe', (sid: string) => remote.subscribe(sid));
 handle('claude:unsubscribe', (sid: string) => remote.unsubscribe(sid));
-handle('claude:answer', (sid: string, req: string, d: string, m?: string) => remote.answer(sid, req, d, m));
+handle('claude:answer', (sid: string, req: string, d: string, m?: string, ans?: Record<string, string>) => remote.answer(sid, req, d, m, ans));
 handle('claude:interrupt', (sid: string) => remote.interrupt(sid));
 handle('claude:stop', (sid: string) => remote.stop(sid));
 handle('claude:restore', (sid: string, c: string) => remote.restore(sid, c));

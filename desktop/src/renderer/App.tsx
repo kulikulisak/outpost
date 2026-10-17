@@ -390,7 +390,7 @@ export function App() {
               onRestore={async (c) => { if (!active.sid) throw new Error('会话已结束，重新打开后再恢复'); await rc.claude.restore(active.sid, c); }}
               onPreview={async (pg) => { if (!active.sid) throw new Error('会话已结束，发一条消息后再预览'); await rc.claude.preview(active.sid, pg); }}
               onInterrupt={() => active.sid && rc.claude.interrupt(active.sid).catch(() => {})}
-              onAnswer={(req, d) => active.sid && rc.claude.answer(active.sid, req, d).catch(() => {})}
+              onAnswer={(req, d, x) => active.sid && rc.claude.answer(active.sid, req, d, x?.message, x?.answers).catch(() => {})}
               footer={footer} banner={banner}
               accounts={accounts} onSwitch={(id) => activeKey && switchConv(activeKey, id, false)} />
           ) : (
