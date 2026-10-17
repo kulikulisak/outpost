@@ -3,7 +3,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Avatar, Dropdown, I, Markdown, confirmDialog, resetText } from './ui';
 import type { Account, OutFile } from '../../shared/types';
 import { toOutFiles } from './VncView';
-import { changeSummary, humanPerm, previewTarget, toolDiff, toolTitle, type Item, type Transcript } from '../transcript';
+import { changeSummary, docFiles, extractLinks, fixPrompt, humanPerm, previewTarget, toolDiff, toolTitle, type Item, type Transcript } from '../transcript';
+import { FileCards, LinkCards, fileItems, slashItems, trigger, type MenuItem } from './Cards';
 import { EFFORTS, MODELS, PERMS, effortLabel, modelLabel, permLabel, prettyModel } from '../options';
 
 export interface ChatProps {
@@ -27,6 +28,8 @@ export interface ChatProps {
   simple: boolean;
   onRestore(checkpoint: string): Promise<void>;
   onPreview(page: string): Promise<void>;
+  account: string;
+  onClear(): void;
 }
 
 export function Chat(p: ChatProps) {
@@ -122,6 +125,7 @@ function humanStep(t: Extract<Item, { kind: 'tool' }>): string {
     case 'Write': return '写文件';
     case 'Edit': case 'MultiEdit': return '修改文件';
     case 'WebFetch': case 'WebSearch': return '上网查资料';
+    case 'mcp__rcc__browser_open': case 'mcp__rcc__browser_read': case 'mcp__rcc__browser_click': case 'mcp__rcc__browser_type': case 'mcp__rcc__browser_scroll': case 'mcp__rcc__browser_back': case 'mcp__rcc__browser_screenshot': return '用服务器浏览器上网';
     case 'Task': case 'Agent': return '分派子任务';
     case 'TodoWrite': return '列计划';
     case 'AskUserQuestion': return '等你回答';
@@ -150,6 +154,7 @@ function ChangesCard({ it, p }: { it: Extract<Item, { kind: 'changes' }>; p: Cha
         {page && <button className="btn p sm" disabled={!!busy} onClick={() => run('preview', () => p.onPreview(page))}>{busy === 'preview' ? <div className="spin" /> : '预览'}</button>}
         <button className="btn sm" disabled={!!busy || p.transcript.busy} onClick={undo}>{busy === 'undo' ? <div className="spin" /> : '撤销这一轮'}</button>
       </div>
+      <FileCards paths={docFiles(it.files)} cwd={p.cwd} />
       {list && <div className="ch-list">{it.files.map((f) => <div key={f.p}><span className={`fs ${f.s}`}>{f.s === 'A' ? '新建' : f.s === 'D' ? '删除' : '修改'}</span>{f.p}</div>)}</div>}
       {err && <div className="err-text" style={{ marginTop: 6 }}>{err}</div>}
     </div>
@@ -164,14 +169,34 @@ function ItemView({ it, onAnswer, accounts, onSwitch, ...p }: { it: Item } & Cha
         {it.text && <div className="user">{it.text}</div>}
       </div>
     );
-    case 'text': return <Markdown text={it.text} />;
+    case 'text': return <><Markdown text={it.text} /><LinkCards urls={extractLinks(it.text)} account={p.account} /></>;
     case 'thinking': return <Thinking text={it.text} />;
     case 'tool': return <ToolCard it={it} />;
     case 'perm': return <PermCard it={it} onAnswer={onAnswer} />;
-    case 'note': return <div className={`note ${it.error ? 'err' : ''}`}>{it.text}</div>;
+    case 'note': return it.error ? <ErrorCard text={it.text} last={it.key === p.transcript.items[p.transcript.items.length - 1]?.key} busy={p.transcript.busy} onFix={() => p.onSend(fixPrompt(it.text))} /> : <div className="note">{it.text}</div>;
     case 'limit': return <LimitCard it={it} accounts={accounts} onSwitch={onSwitch} />;
     case 'changes': return <ChangesCard it={it} p={{ ...p, onAnswer, accounts, onSwitch } as ChatProps} />;
   }
+}
+
+function plainError(t: string): string {
+  if (/overloaded|529/i.test(t)) return 'Claude 那边现在太忙了，稍等一会儿再试';
+  if (/ECONN|network|fetch failed|timed? ?out/i.test(t)) return '服务器连不上网络或请求超时了';
+  if (/permission|denied|EACCES/i.test(t)) return '没有权限做这件事';
+  if (/max_turns|maximum.*turns/i.test(t)) return '这件事步骤太多，做到一半停下了';
+  if (/context|too long|prompt is too long/i.test(t)) return '对话太长了，可以输入 /compact 压缩一下再继续';
+  return '这一步没做成';
+}
+function ErrorCard({ text, last, busy, onFix }: { text: string; last: boolean; busy: boolean; onFix(): Promise<void> }) {
+  const [more, setMore] = useState(false);
+  const [sent, setSent] = useState(false);
+  return (
+    <div className="errcard">
+      <div className="ec-h"><span className="badge err">!</span><b>{plainError(text)}</b></div>
+      {more ? <pre>{text}</pre> : <div className="more" onClick={() => setMore(true)}>查看原始信息 ⌄</div>}
+      {last && !sent && <div className="perm-actions"><button className="btn p" disabled={busy} onClick={async () => { setSent(true); try { await onFix(); } catch { setSent(false); } }}>让 Claude 修好</button></div>}
+    </div>
+  );
 }
 
 function LimitCard({ it, accounts, onSwitch }: { it: Extract<Item, { kind: 'limit' }>; accounts: Account[]; onSwitch(id: string): void }) {
@@ -327,6 +352,8 @@ function Composer(p: ChatProps & { shownModel: string }) {
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState('');
   const [drag, setDrag] = useState(false);
+  const [menu, setMenu] = useState<{ kind: '/' | '@'; start: number; items: MenuItem[]; sel: number } | null>(null);
+  const menuSeq = useRef(0);
   const ta = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const composing = useRef(false);
@@ -339,7 +366,7 @@ function Composer(p: ChatProps & { shownModel: string }) {
   const busy = p.transcript.busy;
   // Esc stops Claude while it works (unless a menu or dialog is open)
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && busy && !document.querySelector('.overlay, .menu')) { e.preventDefault(); p.onInterrupt(); } };
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && busy && !document.querySelector('.overlay, .menu, .cmenu')) { e.preventDefault(); p.onInterrupt(); } };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [busy, p.onInterrupt]);
@@ -353,6 +380,24 @@ function Composer(p: ChatProps & { shownModel: string }) {
     setFiles((cur) => [...cur, ...out.map((f, i) => ({ ...f, key: `${Date.now()}-${i}-${f.name}`, preview: /^image\//.test(f.mime) ? URL.createObjectURL(arr[i]) : undefined }))]);
     setErr('');
     ta.current?.focus();
+  };
+  const updateMenu = (value: string, caret: number) => {
+    const t = trigger(value, caret);
+    if (!t) { setMenu(null); return; }
+    const seq = ++menuSeq.current;
+    (t.kind === '/' ? slashItems(p.cwd, t.q) : fileItems(p.cwd, t.q)).then((items) => {
+      if (seq !== menuSeq.current) return;
+      setMenu(items.length ? { kind: t.kind, start: t.start, items, sel: 0 } : null);
+    });
+  };
+  const pick = (m: MenuItem) => {
+    const el = ta.current!; const caret = el.selectionStart;
+    setMenu(null); menuSeq.current++;
+    if (m.run === 'clear') { setText(''); p.onClear(); return; }
+    const next = text.slice(0, menu!.start) + m.insert + (menu!.kind === '/' ? ' ' : '') + text.slice(caret);
+    setText(next);
+    const pos = menu!.start + m.insert.length + (menu!.kind === '/' ? 1 : 0);
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(pos, pos); });
   };
   const submit = async () => {
     const t = text.trim();
@@ -380,11 +425,28 @@ function Composer(p: ChatProps & { shownModel: string }) {
             ))}
           </div>
         )}
-        <textarea ref={ta} rows={1} value={text} placeholder={p.blockedReason || (busy ? 'Claude 正在工作，按 Esc 可以中断…' : '继续追问，可以粘贴或拖入图片、文件')}
-          onChange={(e) => setText(e.target.value)}
+        <textarea ref={ta} rows={1} value={text} placeholder={p.blockedReason || (busy ? 'Claude 正在工作，按 Esc 可以中断…' : '继续追问，输入 / 用命令，@ 引用文件，也可以粘贴或拖入图片')}
+          onChange={(e) => { setText(e.target.value); updateMenu(e.target.value, e.target.selectionStart); }}
+          onBlur={() => setTimeout(() => setMenu(null), 150)}
           onPaste={(e) => { const fl = Array.from(e.clipboardData.files || []); if (fl.length) { if (!e.clipboardData.getData('text/plain')) e.preventDefault(); add(fl); } }}
           onCompositionStart={() => (composing.current = true)} onCompositionEnd={() => (composing.current = false)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !composing.current && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }} />
+          onKeyDown={(e) => {
+            if (menu && !composing.current) {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setMenu({ ...menu, sel: (menu.sel + (e.key === 'ArrowDown' ? 1 : -1) + menu.items.length) % menu.items.length }); return; }
+              if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pick(menu.items[menu.sel]); return; }
+              if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMenu(null); return; }
+            }
+            if (e.key === 'Enter' && !e.shiftKey && !composing.current && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }} />
+        {menu && (
+          <div className="cmenu">
+            <div className="cm-h">{menu.kind === '/' ? '命令' : '引用项目里的文件'}</div>
+            {menu.items.map((m, i) => (
+              <button key={m.key} className={`cm-i ${i === menu.sel ? 'on' : ''}`} onMouseDown={(e) => { e.preventDefault(); pick(m); }} onMouseEnter={() => setMenu({ ...menu, sel: i })}>
+                <span className="cm-l">{m.label}</span>{m.desc && <span className="cm-d">{m.desc}</span>}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="bar">
           <button className="icon-btn att-btn" title="添加图片或文件" onClick={() => picker.current?.click()}>{I.clip(16)}</button>
           <input ref={picker} type="file" multiple hidden onChange={(e) => { if (e.target.files) add(e.target.files); e.target.value = ''; }} />

@@ -255,6 +255,7 @@ echo "websockify=$(command -v websockify >/dev/null && echo 1)"`;
     if (o.mkdir) a.push('--mkdir');
     if (o.account) a.push('--account', o.account);
     if (o.simple) a.push('--simple');
+    if (o.browser === false) a.push('--no-browser');
     return this.rccJson<{ sid: string; cwd: string }>(a);
   }
   async send(sid: string, text: string, files?: { local: string; name: string; mime: string }[]) {
@@ -393,6 +394,20 @@ echo "websockify=$(command -v websockify >/dev/null && echo 1)"`;
   }
   async deskStop(account: string) { await this.rcc(['desk-stop', '--account', account]); }
   deskDownloads = (account: string) => this.rccJson<DeskDownloads>(['downloads', '--account', account]);
+  /** small JSON helpers on the server (link cards, @files, /commands, memory, schedules) */
+  async x(argv: string[], stdin?: string) {
+    const ok = ['unfurl', 'files', 'commands', 'memory', 'finfo', 'sched-list', 'sched-put', 'sched-remove', 'sched-run'];
+    if (!ok.includes(argv[0])) throw new Error(`not allowed: ${argv[0]}`);
+    return JSON.parse(await this.rcc(argv, stdin, 30000));
+  }
+  /** a dev server Claude started on the server (localhost:PORT), as a URL this computer can open */
+  private portFwd = new Map<number, number>();
+  async previewPortUrl(port: number, p = '/') {
+    if (this.web) return `${this.web.base}${(await this.web.json<{ url: string }>('/api/preview', { port, path: p })).url}`;
+    let local = this.portFwd.get(port);
+    if (!local) { local = await this.ssh.forward(port); this.portFwd.set(port, local); }
+    return `http://127.0.0.1:${local}${p.startsWith('/') ? p : '/' + p}`;
+  }
   async uploadDir() { return (await this.rccJson<{ dir: string }>(['upload-dir'])).dir; }
   /** Copy a local file to the server (attachments for the VPS browser). */
   async putFile(local: string, remotePath: string) {

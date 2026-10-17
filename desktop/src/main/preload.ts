@@ -37,7 +37,10 @@ const api: RcApi = {
     stop: (sid) => call('claude:stop', sid),
     restore: (sid, c) => call('claude:restore', sid, c),
     preview: (sid, p) => call('claude:preview', sid, p),
+    previewPort: (port, p) => call('claude:previewPort', port, p),
   },
+  x: (argv, stdin) => call('rcc:x', argv, stdin),
+  files: { open: (p) => call('files:open', p), save: (p) => call('files:save', p) },
   auth: {
     status: (a) => call('auth:status', a),
     loginCode: (code) => call('auth:loginCode', code),

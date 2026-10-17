@@ -39,6 +39,27 @@ for await (const line of rl) {
     emit({ type: 'result', subtype: 'success', is_error: true, result: "You've hit your limit · resets 6pm", session_id: sessionId });
     continue;
   }
+  if (text.includes('链接')) {
+    emit({ type: 'assistant', session_id: sessionId, message: { role: 'assistant', model, content: [{ type: 'text', text: '找到了官方仓库：https://github.com/anthropics/claude-code ，文档在 [这里](https://docs.anthropic.com/en/docs/claude-code/overview)。预览已经启动：http://localhost:5173/' }] } });
+    emit({ type: 'result', subtype: 'success', session_id: sessionId, total_cost_usd: 0.01, modelUsage: { [model]: {} } });
+    continue;
+  }
+  if (text.includes('报告')) {
+    fs.writeFileSync('周报.pdf', '%PDF-1.4\n% mock\n'); fs.writeFileSync('数据.xlsx', 'PK mock'); fs.writeFileSync('封面.png', Buffer.from('89504e470d0a1a0a', 'hex'));
+    emit({ type: 'assistant', session_id: sessionId, message: { role: 'assistant', model, content: [{ type: 'text', text: '周报做好了：一份 PDF、一张表格和一张封面图。' }] } });
+    emit({ type: 'result', subtype: 'success', session_id: sessionId, total_cost_usd: 0.01, modelUsage: { [model]: {} } });
+    continue;
+  }
+  if (text.includes('出错')) {
+    emit({ type: 'result', subtype: 'error_during_execution', is_error: true, result: 'Error: ENOENT: no such file or directory, open \'/root/chat/data.csv\'', session_id: sessionId });
+    continue;
+  }
+  if (text.includes('工具')) {
+    const r = await rpc('tools/list', {});
+    emit({ type: 'assistant', session_id: sessionId, message: { role: 'assistant', model, content: [{ type: 'text', text: 'tools: ' + r.result.tools.map((t) => t.name).join(',') }] } });
+    emit({ type: 'result', subtype: 'success', session_id: sessionId, total_cost_usd: 0.01, modelUsage: { [model]: {} } });
+    continue;
+  }
   emit({ type: 'assistant', session_id: sessionId, message: { role: 'assistant', model, content: [{ type: 'text', text: `[${ACC}] 收到：**${text.trim()}**。我先看一下 \`session.ts\`。` }] } });
   if (text.includes('改')) {
     const input = { file_path: 'src/auth/session.ts', old_string: 'createdAt', new_string: 'lastSeenAt' };

@@ -35,6 +35,8 @@ export const I = {
   x: (s = 14) => P(<><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>, s, 2),
 };
 
+// links in Claude's replies open outside the app (a new tab / the computer's browser), never in place
+DOMPurify.addHook('afterSanitizeAttributes', (n: Element) => { if (n.tagName === 'A' && /^https?:/i.test(n.getAttribute('href') || '')) { n.setAttribute('target', '_blank'); n.setAttribute('rel', 'noopener noreferrer'); } });
 export function Markdown({ text }: { text: string }) {
   const html = DOMPurify.sanitize(marked.parse(text, { async: false, gfm: true, breaks: false }) as string);
   return <div className="ai" dangerouslySetInnerHTML={{ __html: html }} />;

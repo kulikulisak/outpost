@@ -98,7 +98,7 @@ function start(a) {
   const meta = {
     sid, cwd, worktree, title: a.title || null,
     model: a.model || null, effort: a.effort || null,
-    permissionMode: a['permission-mode'] || 'default', simple: !!a.simple,
+    permissionMode: a['permission-mode'] || 'default', simple: !!a.simple, browser: !a['no-browser'],
     resume: a.resume || null, claudeSessionId: a.resume || null,
     account: accId(a),
     status: 'starting', createdAt: new Date().toISOString(),
@@ -121,6 +121,8 @@ const SIMPLE_PROMPT = [
   '调用命令行工具时，description 字段用用户的语言写一句白话（例如「安装做图表用的组件」），用户会在批准弹窗里看到它。',
 ].join('\n');
 
+const BROWSER_PROMPT = '这台服务器上有一个真实的 Chrome 浏览器，用户可以在「网页版」窗口里实时看到它。需要打开要登录的网站、点按钮、填表、看动态网页时，用 mcp__rcc__browser_open / browser_read / browser_click / browser_type 等工具操作它；如果网站要求用户本人登录或输入验证码，告诉用户去「网页版」窗口里完成，然后再继续。只是查资料时优先用 WebSearch/WebFetch。';
+
 async function run(sid) {
   const m = readMeta(sid);
   const d = dir(sid);
@@ -129,12 +131,14 @@ async function run(sid) {
   if (m.effort) args.push('--effort', m.effort);
   if (m.resume) args.push('--resume', m.resume);
   args.push('--permission-mode', m.permissionMode);
-  if (m.simple) args.push('--append-system-prompt', SIMPLE_PROMPT);
-  if (m.permissionMode !== 'bypassPermissions') {
-    const mcpCfg = path.join(d, 'mcp.json');
-    fs.writeFileSync(mcpCfg, JSON.stringify({ mcpServers: { rcc: { command: process.execPath, args: [SELF, 'mcp', sid] } } }));
-    args.push('--mcp-config', mcpCfg, '--permission-prompt-tool', 'mcp__rcc__approve');
-  }
+  const extra = [m.simple && SIMPLE_PROMPT, m.browser !== false && BROWSER_PROMPT].filter(Boolean).join('\n');
+  if (extra) args.push('--append-system-prompt', extra);
+  const mcpCfg = path.join(d, 'mcp.json');
+  // Node 20 has WebSocket only behind a flag; the browser tools need it
+  const nodeArgs = Number(process.versions.node.split('.')[0]) < 22 ? ['--experimental-websocket'] : [];
+  fs.writeFileSync(mcpCfg, JSON.stringify({ mcpServers: { rcc: { command: process.execPath, args: [...nodeArgs, SELF, 'mcp', sid] } } }));
+  args.push('--mcp-config', mcpCfg);
+  if (m.permissionMode !== 'bypassPermissions') args.push('--permission-prompt-tool', 'mcp__rcc__approve');
   const acc = m.account || 'default';
   const child = spawn(CLAUDE, args, { cwd: m.cwd, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ...accEnv(acc), RCC_SID: sid } });
   let limited = false;
@@ -354,8 +358,15 @@ async function mcp(sid) {
   const handle = async (msg) => {
     const { id, method, params } = msg;
     if (method === 'initialize') return send({ jsonrpc: '2.0', id, result: { protocolVersion: params?.protocolVersion || '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'rcc', version: '0.1.0' } } });
-    if (method === 'tools/list') return send({ jsonrpc: '2.0', id, result: { tools: [tool] } });
+    if (method === 'tools/list') return send({ jsonrpc: '2.0', id, result: { tools: [tool, ...(readMeta(sid).browser !== false ? BROWSER_TOOLS : [])] } });
     if (method === 'ping') return send({ jsonrpc: '2.0', id, result: {} });
+    if (method === 'tools/call' && String(params?.name || '').startsWith('browser_')) {
+      try {
+        const r = await browserTool(sid, params.name, params.arguments || {});
+        const content = r.image ? [{ type: 'image', data: r.image, mimeType: 'image/jpeg' }] : [{ type: 'text', text: r.text }];
+        return send({ jsonrpc: '2.0', id, result: { content, isError: !!r.error } });
+      } catch (e) { return send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: `Browser error: ${e.message}` }], isError: true } }); }
+    }
     if (method === 'tools/call') {
       const { tool_name, input = {}, tool_use_id } = params?.arguments || {};
       let rules = []; try { rules = JSON.parse(fs.readFileSync(path.join(dir(sid), 'perm', 'rules.json'), 'utf8')); } catch { /* none */ }
@@ -816,6 +827,285 @@ function history(id) {
   die(`session not found: ${id}`);
 }
 
+
+// ---------- v0.7: link cards, files/@, commands//, memory, schedules ----------
+const isLocalHost = (h) => /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\]|::1)$/i.test(h);
+const isPrivateIp = (ip) => /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|::1$|f[cd]|fe80:)/i.test(ip);
+const decodeHtml = (s) => String(s || '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/\s+/g, ' ').trim();
+const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
+async function safeFetch(url, o = {}) {
+  const u = new URL(url);
+  if (!/^https?:$/.test(u.protocol)) throw new Error('bad scheme');
+  const dns = await import('node:dns/promises');
+  const addrs = await dns.lookup(u.hostname, { all: true });
+  if (!addrs.length || addrs.some((x) => isPrivateIp(x.address))) throw new Error('private address');
+  return fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(o.timeout || 7000), headers: { 'User-Agent': UA, 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8', ...(o.headers || {}) } });
+}
+async function readCapped(r, max) {
+  const chunks = []; let n = 0;
+  for await (const c of r.body) { chunks.push(c); n += c.length; if (n >= max) break; }
+  try { r.body.cancel?.(); } catch { /* done */ }
+  return Buffer.concat(chunks).subarray(0, max);
+}
+async function dataUri(url, max = 350 * 1024) {
+  try {
+    const r = await safeFetch(url, { timeout: 5000 });
+    const mime = (r.headers.get('content-type') || '').split(';')[0].trim();
+    if (!r.ok || !/^image\//.test(mime) || Number(r.headers.get('content-length') || 0) > max) return null;
+    const buf = await readCapped(r, max + 1);
+    if (buf.length > max) return null;
+    return `data:${mime};base64,${buf.toString('base64')}`;
+  } catch { return null; }
+}
+async function unfurl(a) {
+  let url = String(a.url || '').trim();
+  let u; try { u = new URL(url); } catch { die('bad url'); }
+  if (isLocalHost(u.hostname)) return out({ url, local: true, port: Number(u.port || (u.protocol === 'https:' ? 443 : 80)), path: u.pathname + u.search, site: u.host, title: null });
+  const cdir = path.join(ROOT, 'unfurl'); fs.mkdirSync(cdir, { recursive: true });
+  const cf = path.join(cdir, crypto.createHash('sha1').update(url).digest('hex') + '.json');
+  try { const c = JSON.parse(fs.readFileSync(cf, 'utf8')); if (Date.now() - c.at < 24 * 3600 * 1000) return out(c); } catch { /* miss */ }
+  const res = { url, site: u.hostname.replace(/^www\./, ''), title: null, description: null, icon: null, image: null, at: Date.now() };
+  try {
+    const r = await safeFetch(url);
+    const ct = r.headers.get('content-type') || '';
+    if (/^image\//.test(ct)) { res.image = await dataUri(url); res.title = path.basename(u.pathname); }
+    else if (/html|xml/.test(ct) || !ct) {
+      const html = (await readCapped(r, 600 * 1024)).toString('utf8');
+      const head = html.slice(0, html.search(/<\/head>/i) > 0 ? html.search(/<\/head>/i) : 300000);
+      const meta = (k) => { const m = head.match(new RegExp(`<meta[^>]+(?:property|name)=["']${k}["'][^>]*>`, 'i')); const c = m && m[0].match(/content=["']([^"']*)["']/i); return c ? decodeHtml(c[1]) : null; };
+      res.title = meta('og:title') || meta('twitter:title') || decodeHtml(head.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]) || null;
+      res.description = meta('og:description') || meta('description') || meta('twitter:description');
+      res.site = meta('og:site_name') || res.site;
+      const base = r.url || url;
+      const img = meta('og:image') || meta('twitter:image') || meta('og:image:url');
+      const iconTag = head.match(/<link[^>]+rel=["'][^"']*icon[^"']*["'][^>]*>/i);
+      const iconHref = iconTag && iconTag[0].match(/href=["']([^"']+)["']/i)?.[1];
+      const abs = (h) => { try { return new URL(decodeHtml(h), base).href; } catch { return null; } };
+      const [im, ic] = await Promise.all([img ? dataUri(abs(img)) : null, dataUri(abs(iconHref || '/favicon.ico'), 60 * 1024)]);
+      res.image = im; res.icon = ic;
+    }
+  } catch (e) { res.error = String(e.message || e).slice(0, 120); }
+  if (res.title) res.title = res.title.slice(0, 160);
+  if (res.description) res.description = res.description.slice(0, 280);
+  if (!res.error) fs.writeFileSync(cf, JSON.stringify(res));
+  out(res);
+}
+
+function expandCwd(p) { return path.resolve(String(p || os.homedir()).replace(/^~(?=$|\/)/, os.homedir())); }
+function files(a) {
+  const cwd = expandCwd(a.cwd);
+  if (!fs.existsSync(cwd)) return out([]);
+  let all = [];
+  const g = spawnSync('git', ['-C', cwd, 'ls-files', '-co', '--exclude-standard'], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 8000 });
+  if (g.status === 0 && g.stdout.trim()) all = g.stdout.split('\n').filter(Boolean);
+  else {
+    const r = spawnSync('bash', ['-c', `find . -maxdepth 6 \\( -name node_modules -o -name .git -o -name .venv -o -name __pycache__ -o -name .next -o -name dist -o -name .cache \\) -prune -o -type f -print 2>/dev/null | head -20000`], { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 8000 });
+    all = (r.stdout || '').split('\n').filter(Boolean).map((x) => x.replace(/^\.\//, ''));
+  }
+  const q = String(a.q || '').toLowerCase();
+  const hits = q ? all.filter((f) => f.toLowerCase().includes(q)) : all;
+  const score = (f) => { const b = f.split('/').pop().toLowerCase(); return (q && b.startsWith(q) ? 0 : q && b.includes(q) ? 1 : 2) * 1000 + f.split('/').length * 50 + f.length; };
+  out(hits.sort((x, y) => score(x) - score(y)).slice(0, Number(a.limit) || 40));
+}
+
+function commands(a) {
+  const cwd = expandCwd(a.cwd);
+  const res = [];
+  const scan = (base, source) => {
+    const walk = (d, pre) => {
+      let ents = []; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+      for (const e of ents) {
+        if (e.isDirectory()) walk(path.join(d, e.name), `${pre}${e.name}:`);
+        else if (e.name.endsWith('.md')) {
+          let txt = ''; try { txt = fs.readFileSync(path.join(d, e.name), 'utf8').slice(0, 4000); } catch { /* skip */ }
+          const fm = txt.match(/^---\n([\s\S]*?)\n---/);
+          const desc = fm?.[1].match(/^description:\s*(.+)$/m)?.[1]?.replace(/^["']|["']$/g, '') || txt.replace(/^---[\s\S]*?---\n/, '').split('\n').find((l) => l.trim())?.replace(/^#+\s*/, '').slice(0, 80) || '';
+          res.push({ name: pre + e.name.replace(/\.md$/, ''), description: desc, source });
+        }
+      }
+    };
+    walk(base, '');
+  };
+  scan(path.join(cwd, '.claude', 'commands'), 'project');
+  scan(path.join(os.homedir(), '.claude', 'commands'), 'user');
+  let skills = [];
+  for (const [base, source] of [[path.join(cwd, '.claude', 'skills'), 'project'], [path.join(os.homedir(), '.claude', 'skills'), 'user']]) {
+    try { for (const s of fs.readdirSync(base)) { const f = path.join(base, s, 'SKILL.md'); if (!fs.existsSync(f)) continue; const t = fs.readFileSync(f, 'utf8').slice(0, 3000); skills.push({ name: s, description: t.match(/^description:\s*(.+)$/m)?.[1]?.replace(/^["']|["']$/g, '').slice(0, 100) || '', source, skill: true }); } } catch { /* none */ }
+  }
+  out([...res, ...skills]);
+}
+
+const MEMORY = path.join(os.homedir(), '.claude', 'CLAUDE.md');
+function memory(a) {
+  if (a.set) {
+    const t = readStdin();
+    fs.mkdirSync(path.dirname(MEMORY), { recursive: true });
+    fs.writeFileSync(MEMORY + '.tmp', t); fs.renameSync(MEMORY + '.tmp', MEMORY);
+    return out({ ok: true, path: MEMORY });
+  }
+  let text = ''; try { text = fs.readFileSync(MEMORY, 'utf8'); } catch { /* none */ }
+  out({ path: MEMORY, text });
+}
+
+// file info for cards (any file in the home dir, never secrets)
+const SECRET_RE = /(^|\/)(\.ssh|\.gnupg|\.credentials\.json|\.netrc|\.rcc\/mobile|\.aws|\.docker\/config\.json)(\/|$)/;
+function fileAllowed(p) {
+  const fp = path.resolve(String(p || ''));
+  const home = path.resolve(os.homedir());
+  if (!(fp === home || fp.startsWith(home + path.sep)) && !fp.startsWith(path.resolve(ROOT) + path.sep)) return null;
+  if (SECRET_RE.test(fp)) return null;
+  return fp;
+}
+function finfo(a) {
+  const list = String(a.paths || readStdin()).split('\n').filter(Boolean).slice(0, 50);
+  out(list.map((p) => { const fp = fileAllowed(p); try { const s = fp && fs.statSync(fp); return s && s.isFile() ? { path: fp, size: s.size, mtime: s.mtimeMs } : { path: p, missing: true }; } catch { return { path: p, missing: true }; } }));
+}
+
+// ---------- schedules: ~/.rcc/schedules.json, fired by `rcc sched-tick` (rcc serve runs it every minute) ----------
+const SCHED = path.join(ROOT, 'schedules.json');
+const schedLoad = () => { try { return JSON.parse(fs.readFileSync(SCHED, 'utf8')); } catch { return []; } };
+const schedSave = (l) => { fs.writeFileSync(SCHED + '.tmp', JSON.stringify(l, null, 2)); fs.renameSync(SCHED + '.tmp', SCHED); };
+function wallNow(tz) {
+  let parts; try { parts = new Intl.DateTimeFormat('en-GB', { timeZone: tz || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short', hourCycle: 'h23' }).formatToParts(new Date()); }
+  catch { parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short', hourCycle: 'h23' }).formatToParts(new Date()); }
+  const g = (t) => parts.find((p) => p.type === t)?.value;
+  return { day: `${g('year')}-${g('month')}-${g('day')}`, hm: `${g('hour')}:${g('minute')}`, dow: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(g('weekday')) };
+}
+function schedDue(s, now = Date.now()) {
+  if (!s.enabled) return false;
+  if (s.kind === 'interval') return now - (s.lastRun || s.createdAt || 0) >= Math.max(15, Number(s.every) || 60) * 60000;
+  const w = wallNow(s.tz);
+  if (w.hm < (s.time || '09:00') || s.lastDay === w.day) return false;
+  if (s.kind === 'weekly' && Array.isArray(s.days) && s.days.length && !s.days.includes(w.dow)) return false;
+  if (s.kind === 'once' && s.date && s.date !== w.day) return s.date < w.day && !s.lastRun;
+  return true;
+}
+function schedPut() {
+  let s; try { s = JSON.parse(readStdin()); } catch { die('bad json'); }
+  if (!String(s.prompt || '').trim()) die('要让 Claude 做什么还没写');
+  const l = schedLoad();
+  const i = l.findIndex((x) => x.id === s.id);
+  const prev = i >= 0 ? l[i] : null;
+  const row = { id: prev?.id || crypto.randomBytes(4).toString('hex'), name: String(s.name || s.prompt).slice(0, 60), prompt: String(s.prompt), cwd: s.cwd || '~/chat', account: s.account || null, model: s.model || null, effort: s.effort || null,
+    kind: ['daily', 'weekly', 'interval', 'once'].includes(s.kind) ? s.kind : 'daily', time: /^\d\d:\d\d$/.test(s.time || '') ? s.time : '09:00', days: Array.isArray(s.days) ? s.days.map(Number) : [], every: Number(s.every) || 60, date: s.date || null,
+    tz: s.tz || prev?.tz || 'UTC', enabled: s.enabled !== false, createdAt: prev?.createdAt || Date.now(), lastRun: prev?.lastRun || null, lastSid: prev?.lastSid || null, lastDay: prev?.lastDay || null };
+  // saved after today's time already passed: start tomorrow instead of firing at once
+  if (!prev || prev.time !== row.time || prev.kind !== row.kind) { const w = wallNow(row.tz); if (row.kind !== 'once' && w.hm >= row.time) row.lastDay = w.day; else if (row.kind !== 'once') row.lastDay = null; }
+  if (i >= 0) l[i] = row; else l.push(row);
+  schedSave(l);
+  ensureServe();
+  out(row);
+}
+function ensureServe() {
+  // the clock lives in rcc serve; start it when nothing runs it yet (ssh-only setups)
+  if (process.env.OUTPOST_IN_SERVE) return;
+  if (spawnSync('tmux', ['has-session', '-t', 'rcc-serve'], { stdio: 'ignore' }).status === 0) return;
+  if (spawnSync('pgrep', ['-f', 'rcc-serve.mjs run'], { stdio: 'ignore' }).status === 0) return;
+  const here = path.dirname(SELF);
+  if (!fs.existsSync(path.join(here, 'rcc-serve.mjs'))) return;
+  spawnSync(process.execPath, [SELF, 'serve', 'start'], { stdio: 'ignore', timeout: 20000 });
+}
+function schedFire(s) {
+  if (s.lastSid) { try { const m = JSON.parse(fs.readFileSync(metaPath(s.lastSid), 'utf8')); if (!m.busy) spawnSync('tmux', ['kill-session', '-t', tmuxName(s.lastSid)], { stdio: 'ignore' }); } catch { /* gone */ } }
+  const args = [SELF, 'start', '--cwd', s.cwd || '~/chat', '--mkdir', '--simple', '--title', `⏰ ${s.name}`];
+  if (s.account) args.push('--account', s.account);
+  if (s.model) args.push('--model', s.model);
+  if (s.effort) args.push('--effort', s.effort);
+  const r = spawnSync(process.execPath, args, { encoding: 'utf8' });
+  let sid; try { sid = JSON.parse(r.stdout).sid; } catch { return { error: (r.stderr || '').trim() || 'start failed' }; }
+  writeMeta(sid, { schedule: s.id });
+  const end = Date.now() + 20000;
+  while (Date.now() < end) {
+    const x = spawnSync(process.execPath, [SELF, 'send', sid], { input: s.prompt, encoding: 'utf8' });
+    if (x.status === 0) return { sid };
+    spawnSync('sleep', ['0.5']);
+  }
+  return { sid, error: 'send failed' };
+}
+function schedTick(force) {
+  const l = schedLoad(); let changed = false; const fired = [];
+  for (const s of l) {
+    if (!(force === s.id || schedDue(s))) continue;
+    const w = wallNow(s.tz);
+    s.lastRun = Date.now(); s.lastDay = w.day; changed = true;
+    if (s.kind === 'once' && force !== s.id) s.enabled = false;
+    schedSave(l); // mark first so a slow start never fires twice
+    const r = schedFire(s);
+    s.lastSid = r.sid || s.lastSid; s.lastError = r.error || null;
+    fired.push({ id: s.id, ...r });
+  }
+  if (changed) schedSave(l);
+  out({ fired });
+}
+
+// ---------- browser tools for Claude (MCP), driving the account's VPS Chromium over CDP ----------
+const BROWSER_TOOLS = [
+  { name: 'browser_open', description: 'Open a web page in the server\'s real Chrome browser (the user can watch it live). Use this for sites that need JavaScript, logging in, clicking or filling forms. Returns the page title, URL and visible text.', inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } },
+  { name: 'browser_read', description: 'Read the current page in the server browser: title, URL, visible text, and a numbered list of clickable/typeable elements ([id] role "label").', inputSchema: { type: 'object', properties: {} } },
+  { name: 'browser_click', description: 'Click an element in the server browser, by its [id] from browser_read, or by visible text.', inputSchema: { type: 'object', properties: { id: { type: 'number' }, text: { type: 'string' } } } },
+  { name: 'browser_type', description: 'Type text into an input in the server browser (by [id] from browser_read, or the focused element). Set enter=true to press Enter afterwards.', inputSchema: { type: 'object', properties: { id: { type: 'number' }, text: { type: 'string' }, enter: { type: 'boolean' } }, required: ['text'] } },
+  { name: 'browser_scroll', description: 'Scroll the current page down (positive) or up (negative) by screens.', inputSchema: { type: 'object', properties: { screens: { type: 'number' } } } },
+  { name: 'browser_back', description: 'Go back one page in the server browser.', inputSchema: { type: 'object', properties: {} } },
+  { name: 'browser_screenshot', description: 'Take a screenshot of the current page in the server browser.', inputSchema: { type: 'object', properties: {} } },
+];
+const READ_JS = `(() => {
+  let n = 0; const els = [];
+  const vis = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width > 2 && r.height > 2 && s.visibility !== 'hidden' && s.display !== 'none'; };
+  for (const e of document.querySelectorAll('a[href],button,input:not([type=hidden]),textarea,select,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[contenteditable=true],summary')) {
+    if (!vis(e) || els.length >= 120) continue;
+    const id = ++n; e.setAttribute('data-rcc-id', id);
+    const label = (e.getAttribute('aria-label') || e.innerText || e.value || e.placeholder || e.title || e.name || e.getAttribute('href') || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
+    const role = e.tagName === 'A' ? 'link' : e.tagName === 'INPUT' ? 'input:' + (e.type || 'text') : e.tagName.toLowerCase();
+    els.push('[' + id + '] ' + role + ' "' + label + '"');
+  }
+  const text = (document.body?.innerText || '').replace(/\\n{3,}/g, '\\n\\n').slice(0, 12000);
+  return JSON.stringify({ title: document.title, url: location.href, text, els });
+})()`;
+async function browserTool(sid, name, args) {
+  if (typeof WebSocket === 'undefined') throw new Error('Node is too old for browser control (needs Node 22 or --experimental-websocket).');
+  const m = readMeta(sid); const acc = m.account || 'default';
+  const r = spawnSync(process.execPath, [SELF, 'desk', '--account', acc, '--url', 'about:blank'], { encoding: 'utf8', timeout: 40000 });
+  let port; try { port = JSON.parse(r.stdout).cdpPort; } catch { throw new Error(`server browser did not start: ${(r.stderr || '').slice(0, 200)}`); }
+  const base = `http://127.0.0.1:${port}`;
+  const bf = path.join(dir(sid), 'browser.json');
+  let tid = null; try { tid = JSON.parse(fs.readFileSync(bf, 'utf8')).tid; } catch { /* first use */ }
+  const pages = await (await fetch(`${base}/json`)).json();
+  let page = pages.find((p) => p.id === tid && p.type === 'page');
+  if (!page) page = pages.find((p) => p.type === 'page' && p.url === 'about:blank') || await (await fetch(`${base}/json/new?about:blank`, { method: 'PUT' })).json();
+  fs.writeFileSync(bf, JSON.stringify({ tid: page.id }));
+  await fetch(`${base}/json/activate/${page.id}`).catch(() => {});
+  const ws = new WebSocket(page.webSocketDebuggerUrl || `ws://127.0.0.1:${port}/devtools/page/${page.id}`);
+  await new Promise((res, rej) => { ws.addEventListener('open', res); ws.addEventListener('error', () => rej(new Error('cannot reach the browser'))); });
+  let seq = 0; const pend = new Map();
+  ws.addEventListener('message', (e) => { const msg = JSON.parse(String(e.data)); const p = pend.get(msg.id); if (p) { pend.delete(msg.id); msg.error ? p.rej(new Error(msg.error.message)) : p.res(msg.result); } });
+  const call = (method, params = {}) => new Promise((res, rej) => { const id = ++seq; pend.set(id, { res, rej }); ws.send(JSON.stringify({ id, method, params })); setTimeout(() => { if (pend.delete(id)) rej(new Error(`${method} timed out`)); }, 20000); });
+  const ev = async (expr) => (await call('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.value;
+  const settle = async () => { for (let i = 0; i < 40; i++) { await sleep(250); if ((await ev('document.readyState').catch(() => '')) === 'complete') break; } await sleep(400); };
+  const read = async () => { const j = JSON.parse(await ev(READ_JS)); return `Title: ${j.title}\nURL: ${j.url}\n\n${j.text}\n\nElements:\n${j.els.join('\n')}`; };
+  const center = async (sel) => ev(`(() => { const e = ${sel}; if (!e) return null; e.scrollIntoView({block:'center'}); const r = e.getBoundingClientRect(); return [r.x + r.width/2, r.y + r.height/2]; })()`);
+  const byId = (id) => `document.querySelector('[data-rcc-id="${Number(id)}"]')`;
+  const byText = (t) => `[...document.querySelectorAll('a,button,[role=button],[role=link],input[type=submit],summary,label,[role=tab],[role=menuitem]')].find(e => (e.innerText||e.value||e.getAttribute('aria-label')||'').trim().toLowerCase().includes(${JSON.stringify(String(t || '').toLowerCase())}))`;
+  const click = async (pt) => { for (const type of ['mousePressed', 'mouseReleased']) await call('Input.dispatchMouseEvent', { type, x: pt[0], y: pt[1], button: 'left', clickCount: 1 }); };
+  try {
+    await call('Page.enable'); await call('Runtime.enable');
+    switch (name) {
+      case 'browser_open': { let url = String(args.url || ''); if (!/^[a-z]+:/i.test(url)) url = `https://${url}`; await call('Page.navigate', { url }); await settle(); return { text: await read() }; }
+      case 'browser_read': return { text: await read() };
+      case 'browser_click': { const pt = await center(args.id != null ? byId(args.id) : byText(args.text)); if (!pt) return { text: 'Element not found. Call browser_read to get fresh ids.', error: true }; await click(pt); await settle(); return { text: await read() }; }
+      case 'browser_type': {
+        if (args.id != null) { const pt = await center(byId(args.id)); if (!pt) return { text: 'Element not found. Call browser_read to get fresh ids.', error: true }; await click(pt); await ev(`(() => { const e = ${byId(args.id)}; if (e && 'value' in e) { e.select?.(); } })()`); }
+        await call('Input.insertText', { text: String(args.text || '') });
+        if (args.enter) { await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' }); await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }); await settle(); }
+        return { text: args.enter ? await read() : 'Typed.' };
+      }
+      case 'browser_scroll': await ev(`window.scrollBy(0, innerHeight * ${Number(args.screens) || 1})`); await sleep(400); return { text: await read() };
+      case 'browser_back': await ev('history.back()'); await settle(); return { text: await read() };
+      case 'browser_screenshot': { const s = await call('Page.captureScreenshot', { format: 'jpeg', quality: 60 }); return { image: s.data }; }
+      default: return { text: `unknown tool ${name}`, error: true };
+    }
+  } finally { try { ws.close(); } catch { /* closed */ } }
+}
+
 // ---------- main ----------
 const a = parseArgs(process.argv.slice(2));
 const [cmd, sid, ...rest] = a._;
@@ -867,5 +1157,15 @@ switch (cmd) {
   case 'login-status': await loginStatus(a); break;
   case 'login-code': loginCode(sid); break;
   case 'login-stop': loginStop(); break;
+  case 'unfurl': await unfurl(a); break;
+  case 'files': files(a); break;
+  case 'commands': commands(a); break;
+  case 'memory': memory(a); break;
+  case 'finfo': finfo(a); break;
+  case 'sched-list': out(schedLoad().map((s) => ({ ...s, due: schedDue(s) }))); break;
+  case 'sched-put': schedPut(); break;
+  case 'sched-remove': schedSave(schedLoad().filter((s) => s.id !== sid)); out({ ok: true }); break;
+  case 'sched-run': schedTick(sid); break;
+  case 'sched-tick': schedTick(null); break;
   default: die('usage: rcc doctor|start|send|tail|answer|interrupt|stop|list|projects');
 }

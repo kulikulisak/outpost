@@ -14,8 +14,8 @@ const sessSub = (s: LiveSession) => {
   return prettyModel(s.resolvedModel) || '等待输入';
 };
 
-export function SessionsPage({ sessions, connected, server, accounts, onOpen, onNew, onAccounts }: {
-  sessions: LiveSession[] | null; connected: boolean; server: string; accounts: Account[]; onOpen(o: Open): void; onNew(): void; onAccounts(): void;
+export function SessionsPage({ sessions, connected, server, accounts, onOpen, onNew, onQuick, onAccounts }: {
+  sessions: LiveSession[] | null; connected: boolean; server: string; accounts: Account[]; onOpen(o: Open): void; onNew(): void; onQuick(): void; onAccounts(): void;
 }) {
   const [q, setQ] = useState('');
   const active = accounts.find((a) => a.active);
@@ -60,10 +60,11 @@ export function SessionsPage({ sessions, connected, server, accounts, onOpen, on
         {sessions && !sessions.length && <div className="empty">还没有会话。<br />点右下角「新任务」开始，或去「项目」接着以前的对话。</div>}
         {groups.pending.length > 0 && <><div className="sec"><span>需要你处理</span></div>{groups.pending.map(Row)}</>}
         {groups.by.map(([cwd, list]) => (
-          <div key={cwd}><div className="sec"><span>{base(cwd)}</span><span>{list.length}</span></div>{list.map(Row)}</div>
+          <div key={cwd}><div className="sec"><span>{/\/chat$/.test(cwd) ? '随手聊' : base(cwd)}</span><span>{list.length}</span></div>{list.map(Row)}</div>
         ))}
         <div style={{ height: 90 }} />
       </div>
+      <button className="fab quick" onClick={onQuick}>{I.chat}随手聊</button>
       <button className="fab" onClick={onNew}>{I.plus}新任务</button>
     </div>
   );
@@ -165,7 +166,7 @@ export function NewTaskSheet({ cwd: initialCwd, accounts, onClose, onStarted }: 
     setBusy(true);
     try {
       saveOpts(opts); localStorage.setItem('rcc.lastCwd', cwd.trim());
-      const r = await api<{ sid: string }>('/api/start', { cwd: cwd.trim(), mkdir: true, model: opts.model || undefined, effort: opts.effort, permissionMode: opts.permissionMode, account: opts.account || undefined, title: text.trim().slice(0, 40), simple: isSimple() });
+      const r = await api<{ sid: string }>('/api/start', { cwd: cwd.trim(), mkdir: true, model: opts.model || undefined, effort: opts.effort, permissionMode: opts.permissionMode, account: opts.account || undefined, title: text.trim().slice(0, 40), simple: isSimple(), browser: localStorage.getItem('rcc.browser') !== '0' });
       await new Promise((res) => setTimeout(res, 600));
       for (let i = 0; i < 10; i++) {
         try { await api('/api/send', { sid: r.sid, text: text.trim() }); break; }
@@ -179,9 +180,9 @@ export function NewTaskSheet({ cwd: initialCwd, accounts, onClose, onStarted }: 
   return (
     <Sheet onClose={onClose}>
       <h2>新任务</h2>
-      <div className="lbl">项目目录</div>
+      <div className="lbl">在哪里做（随手聊不用选项目）</div>
       <input className="field mono" value={cwd} onChange={(e) => setCwd(e.target.value)} placeholder="~/code/项目名" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
-      {projects.length > 0 && <div className="sugg" style={{ marginTop: 8 }}>{projects.slice(0, 6).map((p) => <button key={p.cwd} className="chip" onClick={() => setCwd(p.cwd)} style={cwd === p.cwd ? { color: 'var(--accent)' } : undefined}>{p.name}</button>)}</div>}
+      {<div className="sugg" style={{ marginTop: 8 }}><button className="chip" onClick={() => setCwd('~/chat')} style={cwd === '~/chat' ? { color: 'var(--accent)' } : undefined}>💬 随手聊</button>{projects.filter((p) => !/\/chat$/.test(p.cwd)).slice(0, 6).map((p) => <button key={p.cwd} className="chip" onClick={() => setCwd(p.cwd)} style={cwd === p.cwd ? { color: 'var(--accent)' } : undefined}>{p.name}</button>)}</div>}
       <div className="lbl">要做什么</div>
       <textarea className="field" rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="比如：给登录页加上记住我" style={{ resize: 'none' }} />
       <div className="sugg" style={{ marginTop: 10 }}><button className="chip" onClick={() => setShowOpts(true)}>{label || '默认'} · {PERMS.find((p) => p.id === opts.permissionMode)?.label}{opts.account ? ` · ${accounts.find((a) => a.id === opts.account)?.name || ''}` : ''}</button></div>

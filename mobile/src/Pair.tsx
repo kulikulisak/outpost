@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, auth } from './api';
+import { loginWithPasskey, passkeySupported } from './passkey';
 
 function deviceName() {
   const ua = navigator.userAgent;
@@ -27,6 +28,17 @@ export function Pair({ onDone }: { onDone(): void }) {
     } catch (e: any) { setErr(e.message); setBusy(false); }
   };
 
+  const passkey = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await loginWithPasskey(deviceName());
+      auth.set(r.token);
+      if (r.url) localStorage.setItem('rcc.directUrl', r.url);
+      localStorage.setItem('rcc.server', r.server);
+      onDone();
+    } catch (e: any) { setErr(e.name === 'NotAllowedError' ? '已取消' : e.message); setBusy(false); }
+  };
+
   // the QR code carries the pairing code in the URL fragment (never sent to any server log)
   useEffect(() => {
     const check = () => { const m = location.hash.match(/pair=([A-Za-z0-9]{8})/); if (m) { setCode(m[1].toUpperCase()); redeem(m[1]); } };
@@ -46,6 +58,7 @@ export function Pair({ onDone }: { onDone(): void }) {
       </div>
       {err && <div className="err">{err}</div>}
       <button className="btn pri" disabled={clean.length !== 8 || busy} onClick={() => redeem(clean)}>{busy ? '正在配对…' : '配对'}</button>
+      {passkeySupported() && <button className="btn" style={{ marginTop: 10 }} disabled={busy} onClick={passkey}>用通行密钥登录（Face ID / 指纹）</button>}
       <div className="steps">
         <div className="step"><div className="n">✓</div><div><b>直接连 VPS</b><div>电脑关着也能用；Claude 只看到 VPS 的环境</div></div></div>
         <div className="step"><div className="n">⇄</div><div><b>电脑开着时可走电脑端</b><div>同一 Wi-Fi 下扫电脑端的「局域网」二维码</div></div></div>

@@ -343,3 +343,41 @@ textarea.input { font-family: var(--mono); font-size: 12px; resize: vertical; }
 .perm .opt span { font-size: 12.5px; color: var(--muted); }
 .perm .opt.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--bg)); }
 .perm .input { width: 100%; box-sizing: border-box; border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 10px; padding: 8px 12px; font: inherit; font-size: 13px; }
+
+/* ---------- v0.7: link cards, file cards, error card, / and @ menu ---------- */
+.lcards { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.lcard { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; max-width: 560px; }
+.lcard .lc-main { display: flex; gap: 12px; padding: 12px; cursor: pointer; }
+.lcard .lc-main:hover { background: var(--hover, var(--chip)); }
+.lcard .lc-img { width: 96px; height: 72px; object-fit: cover; border-radius: 8px; flex-shrink: 0; background: var(--chip); }
+.lcard .lc-b { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.lcard .lc-site { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.lcard .lc-site img { width: 14px; height: 14px; border-radius: 3px; }
+.lcard .lc-t { font-weight: 600; font-size: 13.5px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+.lcard .lc-s { font-size: 12.5px; color: var(--muted); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lcard .lc-skel { display: inline-block; width: 60%; height: 12px; border-radius: 4px; background: var(--chip); }
+.lcard .lc-acts { display: flex; border-top: 1px solid var(--line); }
+.lcard .lc-a { flex: 1; padding: 7px 4px; font-size: 12px; color: var(--muted); }
+.lcard .lc-a + .lc-a { border-left: 1px solid var(--line); }
+.lcard .lc-a:hover { color: var(--text); background: var(--chip); }
+.lcard.local { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.lcard.local .lc-ic { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 14%, var(--bg)); color: var(--accent); flex-shrink: 0; }
+.fcards { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.fcard { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.fcard .fc-ic { width: 34px; height: 40px; border-radius: 6px; color: #fff; font-size: 9.5px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; letter-spacing: .3px; }
+.fcard .fc-b { min-width: 0; flex: 1; cursor: pointer; }
+.fcard .fc-n { font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fcard .fc-s { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.errcard { border: 1px solid color-mix(in srgb, var(--delt) 40%, var(--line)); background: color-mix(in srgb, var(--delt) 5%, var(--bg)); border-radius: 12px; padding: 12px 14px; }
+.errcard .ec-h { display: flex; align-items: center; gap: 8px; }
+.errcard pre { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow: auto; margin-top: 8px; color: var(--muted); }
+.errcard .more { font-size: 12px; color: var(--faint); cursor: pointer; margin-top: 6px; }
+.box { position: relative; }
+.cmenu { position: absolute; left: 8px; right: 8px; bottom: calc(100% + 6px); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--pop); padding: 6px; max-height: 320px; overflow: auto; z-index: 30; }
+.cmenu .cm-h { font-size: 11.5px; color: var(--faint); padding: 4px 8px 6px; }
+.cmenu .cm-i { display: flex; align-items: baseline; gap: 10px; width: 100%; text-align: left; padding: 7px 8px; border-radius: 8px; }
+.cmenu .cm-i.on { background: var(--chip); }
+.cmenu .cm-l { font-weight: 500; font-size: 13px; white-space: nowrap; }
+.cmenu .cm-d { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memo { min-height: 320px; font-family: var(--mono); font-size: 13px; line-height: 1.6; resize: vertical; }
+.pill { font-size: 11px; color: var(--muted); background: var(--chip); border-radius: 10px; padding: 1px 7px; margin-left: 6px; font-weight: 400; }

@@ -5,7 +5,7 @@
 | | 是什么 | 在哪 |
 |---|---|---|
 | 电脑端 | Electron 桌面应用（Windows / macOS）：对话、模型和思考强度、权限批准、多账号、VPS 里的 Claude 网页版 | `desktop/` |
-| 手机端 | PWA 网页 App（iPhone / 安卓，添加到主屏幕）：会话、对话、批准、通知、网页版 | `mobile/` |
+| 手机端 | PWA 网页 App（iPhone / 安卓，添加到主屏幕）：会话、对话、批准、通知、网页版；另有安卓 APK（Release 里下载） | `mobile/`、`android/` |
 | VPS 端 | `rcc`（会话管理，零依赖 Node 单文件）+ `rcc serve`（手机服务，只监听 127.0.0.1） | `vps-agent/` |
 | 安装脚本 | 依赖自检与安装（Node.js、tmux、TigerVNC、Chromium、Claude Code…） | `vps-setup/` |
 
@@ -40,6 +40,16 @@ rcc pair               # 终端显示二维码，手机相机扫一下
 
 不想用 SSH？可以直接部署镜像 `ghcr.io/kulikulisak/outpost:latest`，持久卷挂到 `/root`，端口 8080。部署好后，电脑端和手机端都直接填网址和配对码。详见 [docker/README.md](docker/README.md)。
 
+## 能做什么
+
+- 对话：随手聊（不用选项目）或在项目里干活；输入 `/` 用命令，`@` 引用文件；粘贴图片和文件
+- 省心模式：大白话说明做了什么，每轮自动存档，一键撤销；出错时点「让 Claude 修好」
+- 卡片：网址显示成链接卡片（预览信息由服务器抓取），生成的 PDF / 表格 / 图片显示成文件卡片，`localhost` 页面一键预览
+- 关于我：Claude 一直记得的事（服务器的 `~/.claude/CLAUDE.md`）
+- 定时任务：按时让 Claude 自动做事，电脑手机都关着也会做，做完推送
+- 服务器浏览器：Claude 可以操作服务器上的 Chrome（登录、点按钮、填表），你在「网页版」里看着
+- 多账号、额度用完自动切换；权限批准用大白话；手机通知、通行密钥登录
+
 ## 手机端怎么连
 
 两种入口，可以都配：
@@ -51,6 +61,10 @@ rcc pair               # 终端显示二维码，手机相机扫一下
 
 通知：需要批准、任务完成、额度用完时推送（Web Push，VPS 直接发给苹果 / 谷歌的推送服务，内容加密）。iPhone 需要 iOS 16.4+，并先「分享 → 添加到主屏幕」再从主屏幕打开；通知上直接点「允许 / 拒绝」目前只有安卓支持，iPhone 点通知会打开批准页面。
 
+安卓 App：Release 里的 `Outpost-<版本>-android.apk`，打开后填服务器网址。它和网页版是同一套界面，额外支持保存 / 分享文件；收不到后台通知，需要通知请用 Chrome 打开网址并「安装应用」。
+
+通行密钥：用 https 地址配对一次后，在手机「设置 → 通行密钥」里添加；以后换手机或清了数据，用 Face ID / 指纹登录，不用再找配对码。
+
 隐私：照片在手机上重新编码后再上传（去掉定位、机型等 EXIF），VPS 端也会再清一遍；手机的 UA、IP、时区不会传给 Claude。
 
 ## 目录
@@ -61,6 +75,7 @@ desktop/        Electron + React + TypeScript 桌面端
   src/renderer/   界面
   resources/      打包进应用的 rcc.mjs、rcc-serve.mjs、bootstrap.sh、mobile-web/
 mobile/         手机端 PWA（Vite + React），复用 desktop 的 transcript/options
+android/        安卓壳 App（WebView，打开你的服务器网址）
 vps-agent/      rcc.mjs、rcc-serve.mjs、web/（构建好的手机端，供 install.sh 使用）、test/
 vps-setup/      bootstrap.sh（依赖自检安装）、install.sh（无电脑端安装）
 mockups/        设计稿

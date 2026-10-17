@@ -64,10 +64,12 @@ export function App() {
   return (
     <div className="app">
       {open ? (
-        <Chat key={JSON.stringify(open)} open={open} sessions={sessions} accounts={accounts} onBack={() => setOpen(null)} onSwitch={(sid) => setOpen({ sid })} />
+        <Chat key={JSON.stringify(open)} open={open} sessions={sessions} accounts={accounts} onBack={() => setOpen(null)} onSwitch={(sid) => setOpen({ sid })}
+          onWeb={async (account, url) => { try { await api('/api/desk/open', { account, url }, { timeout: 60000 }); localStorage.setItem('rcc.webAcc', account); setOpen(null); setTab('web'); } catch (e: any) { toast(e.message); } }}
+          onNewChat={(cwd) => { setOpen(null); setNewTask({ cwd }); }} />
       ) : (
         <>
-          {tab === 'sessions' && <SessionsPage sessions={sessions} connected={connected} server={me?.server || localStorage.getItem('rcc.server') || ''} accounts={accounts} onOpen={setOpen} onNew={() => setNewTask({})} onAccounts={() => setAccSheet(true)} />}
+          {tab === 'sessions' && <SessionsPage sessions={sessions} connected={connected} server={me?.server || localStorage.getItem('rcc.server') || ''} accounts={accounts} onOpen={setOpen} onNew={() => setNewTask({})} onQuick={() => setNewTask({ cwd: '~/chat' })} onAccounts={() => setAccSheet(true)} />}
           {tab === 'projects' && <ProjectsPage onOpen={setOpen} onNew={(cwd) => setNewTask({ cwd })} />}
           <div className="page" style={{ display: tab === 'web' ? 'flex' : 'none' }}><WebPage accounts={accounts} visible={tab === 'web' && !open} /></div>
           {tab === 'settings' && <SettingsPage me={me} connected={connected} latency={latency} onUnpaired={() => setPaired(false)} />}

@@ -26,6 +26,8 @@ export const I = {
   chev: <svg className="i" viewBox="0 0 24 24" style={{ width: 16, height: 16, color: 'var(--faint)' }}>{P('M9 6l6 6-6 6')}</svg>,
 };
 
+// links in Claude's replies open outside the app (a new tab / the computer's browser), never in place
+DOMPurify.addHook('afterSanitizeAttributes', (n: Element) => { if (n.tagName === 'A' && /^https?:/i.test(n.getAttribute('href') || '')) { n.setAttribute('target', '_blank'); n.setAttribute('rel', 'noopener noreferrer'); } });
 export function Markdown({ text }: { text: string }) {
   const html = DOMPurify.sanitize(marked.parse(text, { async: false, gfm: true, breaks: false }) as string);
   return <div className="ai" dangerouslySetInnerHTML={{ __html: html }} />;

@@ -181,6 +181,11 @@ export function toolTitle(name: string, input: any): { verb: string; target: str
     case 'WebSearch': return { verb: '搜索网页', target: input.query || '' };
     case 'Task': case 'Agent': return { verb: '子任务', target: input.description || '' };
     case 'TodoWrite': return { verb: '更新待办', target: '' };
+    case 'mcp__rcc__browser_open': return { verb: '浏览器打开', target: input.url || '' };
+    case 'mcp__rcc__browser_click': return { verb: '浏览器点击', target: input.text || (input.id != null ? `#${input.id}` : '') };
+    case 'mcp__rcc__browser_type': return { verb: '浏览器输入', target: input.text || '' };
+    case 'mcp__rcc__browser_read': return { verb: '读取网页', target: '' };
+    case 'mcp__rcc__browser_screenshot': return { verb: '网页截图', target: '' };
     default: return { verb: name.replace(/^mcp__/, ''), target: '' };
   }
 }
@@ -234,6 +239,10 @@ export function humanPerm(tool: string, input: any): { text: string; risk: 'low'
     case 'NotebookEdit': return { text: `修改笔记本「${baseName(input?.notebook_path)}」`, risk: 'low' };
     case 'WebFetch': return { text: `打开网页 ${String(input?.url || '').replace(/^https?:\/\//, '').slice(0, 40)}`, risk: 'low' };
     case 'WebSearch': return { text: `上网搜索「${input?.query || ''}」`, risk: 'low' };
+    case 'mcp__rcc__browser_open': return { text: `用服务器浏览器打开 ${String(input?.url || '').replace(/^https?:\/\//, '').slice(0, 50)}`, risk: 'low' };
+    case 'mcp__rcc__browser_read': case 'mcp__rcc__browser_screenshot': case 'mcp__rcc__browser_scroll': case 'mcp__rcc__browser_back': return { text: '看一下服务器浏览器里的页面', risk: 'low' };
+    case 'mcp__rcc__browser_click': return { text: `在服务器浏览器里点「${input?.text || '一个按钮'}」`, risk: 'mid' };
+    case 'mcp__rcc__browser_type': return { text: `在服务器浏览器里输入「${String(input?.text || '').slice(0, 40)}」`, risk: 'mid' };
     case 'Bash': {
       const cmd = String(input?.command || '');
       const desc = String(input?.description || '').trim();
@@ -260,6 +269,39 @@ export function previewTarget(files: { s: string; p: string }[]): string | null 
   const idx = html.find((p) => /(^|\/)index\.html?$/i.test(p));
   if (idx) return idx;
   if (html.length) return html.sort((a, b) => a.split('/').length - b.split('/').length)[0];
-  if (live.some((f) => /\.(css|js|mjs|svg|png|jpe?g|gif|webp)$/i.test(f.p))) return 'index.html';
+  if (live.some((f) => /\.(css|js|mjs)$/i.test(f.p) && !/(^|\/)(node_modules|scripts?)\//.test(f.p))) return 'index.html';
   return null;
 }
+
+// ---------- v0.7: link cards and file cards ----------
+/** Up to `max` distinct web links in a message (markdown links and bare URLs), skipping images and code. */
+export function extractLinks(text: string, max = 3): string[] {
+  const src = String(text || '').replace(/```[\s\S]*?```/g, ' ').replace(/`[^`]*`/g, ' ').replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
+  const out: string[] = [];
+  const re = /\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"'`）】」，。、]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) && out.length < max) {
+    let u = (m[1] || m[2]).replace(/[.,;:!?*_~]+$/, '');
+    if (!m[1]) { const open = (u.match(/\(/g) || []).length, close = (u.match(/\)/g) || []).length; if (close > open) u = u.replace(/\)+$/, ''); }
+    if (!out.includes(u)) out.push(u);
+  }
+  return out;
+}
+export const isLocalUrl = (u: string) => { try { return /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\])$/i.test(new URL(u).hostname); } catch { return false; } };
+/** Files worth a card (documents, images, media, archives) among what a turn created or changed. */
+const DOC_RE = /\.(pdf|docx?|xlsx?|pptx?|csv|tsv|png|jpe?g|gif|webp|svg|mp3|wav|m4a|mp4|mov|webm|zip|tar\.gz|epub|txt|md|key|numbers|pages)$/i;
+export function docFiles(files: { s: string; p: string }[]): string[] {
+  return files.filter((f) => f.s !== 'D' && DOC_RE.test(f.p) && !/(^|\/)(node_modules|\.git|dist|build|public|assets|static|src)\//.test(f.p) && !/^readme\.md$|(^|\/)(CLAUDE|README|CHANGELOG|LICENSE)\.md$/i.test(f.p)).map((f) => f.p).slice(0, 8);
+}
+export function fileKind(p: string): { label: string; icon: 'image' | 'doc' | 'sheet' | 'slides' | 'pdf' | 'media' | 'zip' | 'text' } {
+  const e = (p.split('.').pop() || '').toLowerCase();
+  if (/^(png|jpe?g|gif|webp|svg)$/.test(e)) return { label: '图片', icon: 'image' };
+  if (e === 'pdf') return { label: 'PDF', icon: 'pdf' };
+  if (/^(xlsx?|csv|tsv|numbers)$/.test(e)) return { label: '表格', icon: 'sheet' };
+  if (/^(pptx?|key)$/.test(e)) return { label: '演示文稿', icon: 'slides' };
+  if (/^(docx?|pages|epub)$/.test(e)) return { label: '文档', icon: 'doc' };
+  if (/^(mp3|wav|m4a|mp4|mov|webm)$/.test(e)) return { label: '音视频', icon: 'media' };
+  if (/^(zip|gz)$/.test(e)) return { label: '压缩包', icon: 'zip' };
+  return { label: '文本', icon: 'text' };
+}
+export const fixPrompt = (err: string) => `刚才出错了：「${err.slice(0, 600)}」\n请找出原因，用一两句大白话告诉我是怎么回事，然后把它修好。`;

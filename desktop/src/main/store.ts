@@ -53,7 +53,7 @@ export const secrets = {
   },
 };
 
-const defaultPrefs: Prefs = { model: 'opus', effort: 'high', permissionMode: 'default', extraProjects: {}, hiddenProjects: {}, theme: 'system', autoSwitch: true, resendOnSwitch: true, keepBrowser: false, fontSize: 14, density: 'comfortable', simple: true, updateUrl: 'https://api.github.com/repos/kulikulisak/outpost/releases/latest' };
+const defaultPrefs: Prefs = { model: 'opus', effort: 'high', permissionMode: 'default', extraProjects: {}, hiddenProjects: {}, theme: 'system', autoSwitch: true, resendOnSwitch: true, keepBrowser: false, fontSize: 14, density: 'comfortable', simple: true, browser: true, updateUrl: 'https://api.github.com/repos/kulikulisak/outpost/releases/latest' };
 export const prefs = {
   get: (): Prefs => ({ ...defaultPrefs, ...readJson<Partial<Prefs>>('prefs.json', {}) }),
   set(p: Partial<Prefs>): Prefs {

@@ -28,7 +28,7 @@ const MROOT = path.join(ROOT, 'mobile');
 const SESS = path.join(ROOT, 'sessions');
 const RCC = process.env.RCC_BIN || (fs.existsSync(path.join(HERE, 'rcc')) ? path.join(HERE, 'rcc') : path.join(HERE, 'rcc.mjs'));
 const WEB_DIRS = [path.join(MROOT, 'web'), path.join(HERE, 'web')];
-const VERSION = '0.6.0';
+const VERSION = '0.7.0';
 const F = { cfg: path.join(MROOT, 'config.json'), dev: path.join(MROOT, 'devices.json'), pair: path.join(MROOT, 'pair.json'), subs: path.join(MROOT, 'push.json') };
 
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
@@ -112,6 +112,98 @@ function revoke(id) {
   writeJ(F.dev, devices().filter((d) => d.id !== id));
   writeJ(F.subs, readJ(F.subs, []).filter((s) => s.deviceId !== id));
   devCache.at = 0;
+}
+
+
+// ---------- passkeys (WebAuthn): sign a new phone in without a pairing code ----------
+// Minimal verifier: attestation "none" is accepted (we only need the public key), ES256 and RS256.
+F.keys = path.join(MROOT, 'passkeys.json');
+const challenges = new Map(); // challenge(b64u) -> { exp, kind, deviceId? }
+function cborDecode(buf) {
+  let i = 0;
+  const rd = () => {
+    const ib = buf[i++]; const mt = ib >> 5; let ai = ib & 31; let len;
+    if (ai < 24) len = ai; else if (ai === 24) len = buf[i++]; else if (ai === 25) { len = buf.readUInt16BE(i); i += 2; } else if (ai === 26) { len = buf.readUInt32BE(i); i += 4; } else if (ai === 27) { len = Number(buf.readBigUInt64BE(i)); i += 8; } else throw new Error('cbor: indefinite length');
+    switch (mt) {
+      case 0: return len;
+      case 1: return -1 - len;
+      case 2: { const v = buf.subarray(i, i + len); i += len; return v; }
+      case 3: { const v = buf.subarray(i, i + len).toString('utf8'); i += len; return v; }
+      case 4: { const v = []; for (let k = 0; k < len; k++) v.push(rd()); return v; }
+      case 5: { const v = new Map(); for (let k = 0; k < len; k++) { const key = rd(); v.set(key, rd()); } return v; }
+      case 7: return ai === 20 ? false : ai === 21 ? true : null;
+      default: throw new Error('cbor: unsupported type');
+    }
+  };
+  const v = rd();
+  return { value: v, end: i };
+}
+function coseToKey(cose) {
+  const kty = cose.get(1), alg = cose.get(3);
+  if (kty === 2 && alg === -7) return { alg, key: crypto.createPublicKey({ format: 'jwk', key: { kty: 'EC', crv: 'P-256', x: b64u(cose.get(-2)), y: b64u(cose.get(-3)) } }) };
+  if (kty === 3 && alg === -257) return { alg, key: crypto.createPublicKey({ format: 'jwk', key: { kty: 'RSA', n: b64u(cose.get(-1)), e: b64u(cose.get(-2)) } }) };
+  throw new Error('不支持的通行密钥类型');
+}
+function rpOf(req) {
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() || (req.socket.encrypted ? 'https' : 'http');
+  return { id: host.replace(/:\d+$/, ''), origin: `${proto}://${host}` };
+}
+function newChallenge(kind, extra = {}) {
+  const c = b64u(crypto.randomBytes(32));
+  for (const [k, v] of challenges) if (v.exp < Date.now()) challenges.delete(k);
+  challenges.set(c, { exp: Date.now() + 5 * 60 * 1000, kind, ...extra });
+  return c;
+}
+function checkClient(req, clientDataB64, type) {
+  const cd = JSON.parse(Buffer.from(clientDataB64, 'base64url').toString('utf8'));
+  const ch = challenges.get(cd.challenge);
+  if (!ch || ch.exp < Date.now() || ch.kind !== type) throw new Error('验证已过期，再试一次');
+  challenges.delete(cd.challenge);
+  if (cd.type !== (type === 'reg' ? 'webauthn.create' : 'webauthn.get')) throw new Error('bad clientData type');
+  const rp = rpOf(req);
+  if (cd.origin !== rp.origin) throw new Error(`来源不匹配：${cd.origin}`);
+  return { ch, rp };
+}
+function passkeyRegOptions(req, dev) {
+  const rp = rpOf(req);
+  const mine = readJ(F.keys, []);
+  return { challenge: newChallenge('reg', { deviceId: dev.id }), rp: { id: rp.id, name: 'Outpost' }, user: { id: b64u(Buffer.from('outpost-owner')), name: 'outpost', displayName: `Outpost · ${process.env.OUTPOST_NAME || os.hostname()}` }, pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }], authenticatorSelection: { residentKey: 'required', userVerification: 'required' }, attestation: 'none', excludeCredentials: mine.filter((k) => k.rpId === rp.id).map((k) => ({ type: 'public-key', id: k.id })) };
+}
+function passkeyRegister(req, body, dev) {
+  const { rp } = checkClient(req, body.clientDataJSON, 'reg');
+  const att = cborDecode(Buffer.from(body.attestationObject, 'base64url')).value;
+  const auth = att.get('authData');
+  if (!auth.subarray(0, 32).equals(crypto.createHash('sha256').update(rp.id).digest())) throw new Error('rpId 不匹配');
+  const flags = auth[32];
+  if (!(flags & 0x01) || !(flags & 0x40)) throw new Error('通行密钥数据不完整');
+  const credLen = auth.readUInt16BE(53);
+  const credId = auth.subarray(55, 55 + credLen);
+  const cose = cborDecode(auth.subarray(55 + credLen)).value;
+  const { alg, key } = coseToKey(cose);
+  const keys = readJ(F.keys, []).filter((k) => k.id !== b64u(credId));
+  keys.push({ id: b64u(credId), rpId: rp.id, alg, pem: key.export({ type: 'spki', format: 'pem' }), name: String(body.name || dev.name || '通行密钥').slice(0, 40), createdAt: Date.now(), by: dev.id, signCount: auth.readUInt32BE(33) });
+  writeJ(F.keys, keys);
+  return { ok: true };
+}
+function passkeyLoginOptions(req) {
+  const rp = rpOf(req);
+  const keys = readJ(F.keys, []).filter((k) => k.rpId === rp.id);
+  return { challenge: newChallenge('get'), rpId: rp.id, userVerification: 'required', allowCredentials: [], available: keys.length > 0 };
+}
+function passkeyLogin(req, body) {
+  const { rp } = checkClient(req, body.clientDataJSON, 'get');
+  const keys = readJ(F.keys, []);
+  const k = keys.find((x) => x.id === body.id && x.rpId === rp.id);
+  if (!k) throw new Error('这个通行密钥不是这台服务器的');
+  const auth = Buffer.from(body.authenticatorData, 'base64url');
+  if (!auth.subarray(0, 32).equals(crypto.createHash('sha256').update(rp.id).digest())) throw new Error('rpId 不匹配');
+  if (!(auth[32] & 0x01)) throw new Error('需要验证身份');
+  const data = Buffer.concat([auth, crypto.createHash('sha256').update(Buffer.from(body.clientDataJSON, 'base64url')).digest()]);
+  const ok = crypto.verify('sha256', data, k.alg === -7 ? { key: k.pem, dsaEncoding: 'der' } : k.pem, Buffer.from(body.signature, 'base64url'));
+  if (!ok) throw new Error('通行密钥验证失败');
+  k.signCount = auth.readUInt32BE(33); k.lastUsed = Date.now(); writeJ(F.keys, keys);
+  return issueDevice(body.name || '通行密钥登录', 'passkey');
 }
 
 // ---------- calling rcc ----------
@@ -220,6 +312,8 @@ function toolLine(name, input = {}) {
   if (name === 'Bash') return CJK.test(String(input.description || '')) ? `想要${String(input.description).slice(0, 80)}` : `想运行 ${String(input.command || '').slice(0, 120)}`;
   if (name === 'Edit' || name === 'MultiEdit' || name === 'Write') return `想修改 ${String(input.file_path || '').replace(/^\/(root|home\/[^/]+)\//, '~/')}`;
   if (name === 'WebFetch') return `想打开 ${input.url || ''}`;
+  if (name === 'mcp__rcc__browser_open') return `想用服务器浏览器打开 ${String(input.url || '').slice(0, 100)}`;
+  if (/^mcp__rcc__browser_/.test(name)) return { browser_read: '想看一下浏览器里的页面', browser_click: `想在浏览器里点「${input.text || '一个按钮'}」`, browser_type: `想在浏览器里输入「${String(input.text || '').slice(0, 40)}」`, browser_scroll: '想滚动浏览器页面', browser_back: '想让浏览器后退', browser_screenshot: '想给浏览器截个图' }[name.slice(10)] || '想操作服务器浏览器';
   return `想使用 ${String(name).replace(/^mcp__/, '')}`;
 }
 let lastUserText = new Map();
@@ -319,7 +413,9 @@ function send(res, code, obj, extra = {}) {
   res.writeHead(code, { 'Content-Type': typeof obj === 'object' && !Buffer.isBuffer(obj) ? 'application/json' : 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', ...SEC, ...extra });
   res.end(body);
 }
+async function peekBody(req) { if (!req._body) req._body = await readBody(req); return req._body; }
 function readBody(req, max = 40 * 1024 * 1024) {
+  if (req._body) return Promise.resolve(req._body);
   return new Promise((resolve, reject) => {
     let n = 0; const chunks = [];
     req.on('data', (c) => { n += c.length; if (n > max) { reject(new Error('请求太大')); req.destroy(); } else chunks.push(c); });
@@ -352,9 +448,31 @@ function proxyPreview(req, res, url) {
   const pv = m && previews.get(m[1]);
   if (!pv || pv.exp < Date.now()) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('预览链接已过期，回到对话里再点一次「预览」'); }
   if (!m[2]) { res.writeHead(302, { Location: `/preview/${m[1]}/` }); return res.end(); }
+  if (pv.raw) return proxyRaw(req, res, pv, m[2] + url.search, m[1]);
   const up = http.request({ host: '127.0.0.1', port: pv.port, path: `/s/${pv.sid}${m[2]}${url.search}`, method: 'GET' }, (r) => { res.writeHead(r.statusCode || 502, r.headers); r.pipe(res); });
   up.on('error', () => { if (!res.headersSent) { res.writeHead(502); } res.end('预览服务没响应'); });
   up.end();
+}
+
+// a dev server Claude started (localhost:5173…): pages ask for /assets/… at the root, so requests whose
+// Referer is a raw preview are sent to that preview's port too
+function proxyRaw(req, res, pv, pathQs, tok) {
+  const headers = { ...req.headers, host: `127.0.0.1:${pv.port}` };
+  delete headers.authorization; delete headers.cookie; delete headers.referer; delete headers.origin;
+  const up = http.request({ host: '127.0.0.1', port: pv.port, path: pathQs, method: req.method, headers }, (r) => {
+    const h = { ...r.headers };
+    if (h.location && /^\//.test(h.location)) h.location = `/preview/${tok}${h.location}`;
+    delete h['set-cookie'];
+    h['content-security-policy'] = 'sandbox allow-scripts allow-forms allow-popups allow-modals';
+    res.writeHead(r.statusCode || 502, h); r.pipe(res);
+  });
+  up.on('error', () => { if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end(`127.0.0.1:${pv.port} 上没有服务在运行（可能已经停了），让 Claude 重新启动一下`); });
+  req.pipe(up);
+}
+function rawPreviewFor(req) {
+  const m = String(req.headers.referer || '').match(/\/preview\/([0-9a-f]{24})\//);
+  const pv = m && previews.get(m[1]);
+  return pv && pv.raw && pv.exp > Date.now() ? { pv, tok: m[1] } : null;
 }
 
 const failures = new Map(); // ip -> { n, until }
@@ -397,6 +515,7 @@ async function api(req, res, url, dev) {
     if (b.worktree) args.push('--worktree', String(b.worktree), '--base', String(b.base || 'HEAD'));
     if (b.mkdir) args.push('--mkdir');
     if (b.simple) args.push('--simple');
+    if (b.browser === false) args.push('--no-browser');
     return send(res, 200, await rccJ(args));
   }
   if (p === '/api/send' && M === 'POST') {
@@ -420,6 +539,13 @@ async function api(req, res, url, dev) {
   if (p === '/api/answer' && M === 'POST') { const b = await readBody(req); await rcc(['answer', String(b.sid), String(b.req), b.decision === 'allow' ? 'allow' : 'deny', ...(b.message ? [String(b.message)] : []), ...(b.rule ? ['--rule', String(b.rule)] : []), ...(b.answers ? ['--answers', JSON.stringify(b.answers)] : [])]); return send(res, 200, { ok: true }); }
   if (p === '/api/push/prefs' && M === 'POST') { const b = await readBody(req); const subs = readJ(F.subs, []); for (const s of subs) if (s.deviceId === dev.id) s.prefs = b.prefs || null; writeJ(F.subs, subs); return send(res, 200, { ok: true }); }
   if (p === '/api/restore' && M === 'POST') { const b = await readBody(req); return send(res, 200, await rccJ(['restore', String(b.sid), String(b.checkpoint)])); }
+  if (p === '/api/preview' && M === 'POST' && (await peekBody(req)).port) {
+    const b = req._body; const port = Number(b.port);
+    if (!(port > 0 && port < 65536) || [Number(cfg().port || 7788), 6099].includes(port)) return send(res, 400, { error: 'bad port' });
+    const tok = crypto.randomBytes(12).toString('hex');
+    previews.set(tok, { raw: true, port, exp: Date.now() + 12 * 3600 * 1000 });
+    return send(res, 200, { url: `/preview/${tok}${String(b.path || '/').startsWith('/') ? String(b.path || '/') : '/'}` });
+  }
   if (p === '/api/preview' && M === 'POST') {
     const b = await readBody(req); const sid = String(b.sid || '');
     if (!/^[0-9a-f]{6,20}$/.test(sid)) return send(res, 400, { error: 'bad sid' });
@@ -456,9 +582,11 @@ async function api(req, res, url, dev) {
     catch (e) { return send(res, 500, { error: String(e.message || e) }); }
   }
   if (p === '/api/file' && M === 'GET') {
-    const fp = insideRoot(q('path'));
+    const fp = readable(q('path'));
     if (!fp || !fs.existsSync(fp) || !fs.statSync(fp).isFile()) return send(res, 404, { error: '文件不存在' });
-    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': fs.statSync(fp).size, 'Cache-Control': 'no-store', ...SEC });
+    const inline = q('inline') === '1';
+    const mime = inline ? FMIME[path.extname(fp).toLowerCase()] || 'application/octet-stream' : 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': mime, 'Content-Length': fs.statSync(fp).size, 'Cache-Control': 'no-store', ...SEC, 'Content-Security-Policy': 'sandbox', 'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(path.basename(fp))}` });
     return fs.createReadStream(fp).pipe(res);
   }
   if (p === '/api/file' && M === 'PUT') {
@@ -468,6 +596,10 @@ async function api(req, res, url, dev) {
     await new Promise((resolve, reject) => { const w = fs.createWriteStream(fp); req.pipe(w); w.on('finish', resolve); w.on('error', reject); req.on('error', reject); });
     return send(res, 200, { ok: true, path: fp });
   }
+  if (p === '/api/passkey/register-options') return send(res, 200, passkeyRegOptions(req, dev));
+  if (p === '/api/passkey/register' && M === 'POST') { try { return send(res, 200, passkeyRegister(req, await readBody(req, 65536), dev)); } catch (e) { return send(res, 400, { error: String(e.message || e) }); } }
+  if (p === '/api/passkeys') return send(res, 200, readJ(F.keys, []).map(({ pem, ...k }) => k));
+  if (p === '/api/passkeys/remove' && M === 'POST') { const b = await readBody(req); writeJ(F.keys, readJ(F.keys, []).filter((k) => k.id !== b.id)); return send(res, 200, { ok: true }); }
   if (p === '/api/devices') return send(res, 200, devices().map(({ tokenHash, ...d }) => ({ ...d, me: d.id === dev.id })));
   if (p === '/api/devices/revoke' && M === 'POST') { const b = await readBody(req); revoke(String(b.id)); return send(res, 200, { ok: true }); }
   if (p === '/api/desk/open' && M === 'POST') {
@@ -561,7 +693,18 @@ function pendingPerms(sid) {
 
 const RCC_ALLOWED = new Set(['doctor', 'auth', 'projects', 'list', 'history', 'start', 'send', 'answer', 'interrupt', 'stop', 'restore', 'checkpoints', 'preview',
   'accounts', 'account-add', 'account-rename', 'account-use', 'account-order', 'account-remove', 'account-clear-limit',
-  'login-start', 'login-status', 'login-code', 'login-stop', 'logout', 'browse', 'browser-close', 'desk', 'desk-open', 'desk-stop', 'desk-list', 'downloads', 'upload-dir', 'serve']);
+  'login-start', 'login-status', 'login-code', 'login-stop', 'logout', 'browse', 'browser-close', 'desk', 'desk-open', 'desk-stop', 'desk-list', 'downloads', 'upload-dir', 'serve',
+  'unfurl', 'files', 'commands', 'memory', 'finfo', 'sched-list', 'sched-put', 'sched-remove', 'sched-run']);
+const SECRET_RE = /(^|\/)(\.ssh|\.gnupg|\.credentials\.json|\.netrc|\.rcc\/mobile|\.aws|\.docker\/config\.json)(\/|$)/;
+// files a paired device may read: anything in the home folder (Claude can read it anyway), never secrets
+function readable(p) {
+  if (!p) return null;
+  const fp = path.resolve(String(p).replace(/^~(?=$|\/)/, os.homedir()));
+  const home = path.resolve(os.homedir());
+  if (!(fp.startsWith(home + path.sep) || fp.startsWith(path.resolve(ROOT) + path.sep))) return null;
+  return SECRET_RE.test(fp) ? null : fp;
+}
+const FMIME = { '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.mp3': 'audio/mpeg', '.mp4': 'video/mp4', '.txt': 'text/plain; charset=utf-8', '.md': 'text/plain; charset=utf-8', '.csv': 'text/csv; charset=utf-8', '.json': 'application/json', '.html': 'text/plain; charset=utf-8', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.zip': 'application/zip' };
 function insideRoot(p) {
   if (!p) return null;
   const fp = path.resolve(String(p));
@@ -640,6 +783,13 @@ async function runServer(a) {
         return send(res, 200, { ...r, url: cfg().url, server: process.env.OUTPOST_NAME || os.hostname() });
       }
       if (url.pathname.startsWith('/preview/')) return proxyPreview(req, res, url);
+      if (!url.pathname.startsWith('/api/')) { const rp = rawPreviewFor(req); if (rp) return proxyRaw(req, res, rp.pv, url.pathname + url.search, rp.tok); }
+      if (url.pathname === '/api/passkey/login-options') return send(res, 200, passkeyLoginOptions(req));
+      if (url.pathname === '/api/passkey/login' && req.method === 'POST') {
+        if (limited(ip)) return send(res, 429, { error: '尝试太频繁，5 分钟后再试' });
+        try { const r = passkeyLogin(req, await readBody(req, 16384)); return send(res, 200, { ...r, url: cfg().url, server: process.env.OUTPOST_NAME || os.hostname() }); }
+        catch (e) { fail(ip); return send(res, 400, { error: String(e.message || e) }); }
+      }
       if (url.pathname.startsWith('/cdp/')) return await proxyCdpHttp(req, res, url, ip);
       if (url.pathname === '/api/ping') return send(res, 200, { ok: true, version: VERSION });
       if (url.pathname.startsWith('/api/')) {
@@ -670,6 +820,8 @@ async function runServer(a) {
   });
   scanOnce(true);
   setInterval(() => { try { scanOnce(false); } catch { /* keep going */ } }, 1000);
+  // scheduled tasks: one tick a minute
+  setInterval(() => { const c = spawn(process.execPath, [RCC, 'sched-tick'], { stdio: 'ignore', env: { ...process.env, OUTPOST_IN_SERVE: '1' } }); c.on('error', () => {}); }, 60000);
 }
 
 // ---------- tailscale ----------

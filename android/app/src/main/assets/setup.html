@@ -1,0 +1,28 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Outpost</title>
+<style>
+body{font:16px/1.5 system-ui,-apple-system,"PingFang SC","Noto Sans CJK SC",sans-serif;margin:0;padding:48px 24px;color:#18181b;background:#fff}
+h1{font-size:26px;margin:18px 0 6px} p{color:#71717a;margin:0 0 22px;font-size:15px}
+img{width:64px;height:64px;border-radius:16px}
+input{width:100%;box-sizing:border-box;height:52px;border:1px solid #e4e4e7;border-radius:14px;padding:0 14px;font-size:16px;outline:none}
+input:focus{border-color:#d97757}
+button{width:100%;height:52px;border:0;border-radius:14px;background:#d97757;color:#fff;font-size:16px;font-weight:600;margin-top:14px}
+.err{color:#e11d48;font-size:14px;margin-top:10px;min-height:20px}
+.tip{font-size:13px;color:#a1a1aa;margin-top:22px}
+@media (prefers-color-scheme: dark){body{background:#141416;color:#ececee} input{background:#1c1c1f;border-color:#2a2a2e;color:#ececee}}
+</style></head><body>
+<img src="icon.png" alt="">
+<h1>连接你的服务器</h1>
+<p>填写你的 Outpost 网址，比如 Zeabur 给的域名。下一步用配对码或通行密钥登录。</p>
+<input id="u" type="url" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://outpost-xxx.zeabur.app">
+<button id="go">连接</button>
+<div class="err" id="e"></div>
+<div class="tip">也可以填电脑端「设置 → 手机」里显示的地址。地址以后可以在 App 的「设置」里更换。</div>
+<script>
+const q=new URLSearchParams(location.search);
+const u=document.getElementById('u'), e=document.getElementById('e');
+u.value=q.get('url')||''; if(q.get('error')) e.textContent='连不上：'+q.get('error');
+document.getElementById('go').onclick=()=>{let v=u.value.trim(); if(!v){e.textContent='先填网址';return}
+ if(!/^https?:\/\//i.test(v)) v='https://'+v; v=v.replace(/\/+$/,''); OutpostNative.setServer(v);};
+u.addEventListener('keydown',ev=>{if(ev.key==='Enter')document.getElementById('go').click()});
+</script></body></html>

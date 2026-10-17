@@ -12,6 +12,7 @@ export function Sidebar(p: {
   server: { name: string; dot: 'ok' | 'warn' | 'err' | ''; label: string };
   loadingProjects: boolean;
   onNew(cwd?: string): void;
+  onQuick(): void;
   onOpen(key: string): void;
   onAddProject(): void;
   onWorktree(cwd: string): void;
@@ -32,6 +33,7 @@ export function Sidebar(p: {
     <aside className="side">
       <div className="titlespace drag" />
       <button className="side-btn" onClick={() => p.onNew()}>{I.compose()}新建会话<span className="kbd">{navigator.platform.includes('Mac') ? '⌘N' : 'Ctrl+N'}</span></button>
+      <button className="side-btn" onClick={() => p.onQuick()} title="不用选项目，随便问问、查资料、写东西">{I.chat()}随手聊</button>
       <div className="sec">
         <span>项目</span>
         <span style={{ display: 'flex', gap: 2 }}>
@@ -49,7 +51,7 @@ export function Sidebar(p: {
               <div className="proj" title={pr.cwd} onClick={() => setOpen({ ...open, [pr.cwd]: !o })}>
                 <span className={`chev ${o ? 'open' : ''}`}>▶</span>
                 {I.folder()}
-                <span className="name">{pr.name}</span>
+                <span className="name">{pr.name === 'chat' ? '随手聊' : pr.name}</span>
                 {pr.sessions.some((s) => s.busy) ? <span className="dot pulse" /> : <span className="cnt">{pr.sessions.length || ''}</span>}
                 <span className="acts">
                   <button className="icon-btn" title="在此项目新建会话" onClick={(e) => { e.stopPropagation(); p.onNew(pr.cwd); }}>{I.plus(13)}</button>

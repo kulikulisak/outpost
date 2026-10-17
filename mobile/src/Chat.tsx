@@ -1,6 +1,9 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api, stream, type Account, type LiveSession } from './api';
-import { buildTranscript, changeSummary, humanPerm, previewTarget, toolDiff, toolTitle, type Item } from '@desktop/transcript';
+import { buildTranscript, changeSummary, docFiles, extractLinks, fixPrompt, humanPerm, previewTarget, toolDiff, toolTitle, type Item } from '@desktop/transcript';
+import { FileCards, LinkCards, fileItems, native, slashItems, trigger, type MenuItem } from './Cards';
+
+const Ctx = createContext<{ cwd: string; busy: boolean; onFix(err: string): void; onServerBrowser(url: string): void; lastKey?: string }>({ cwd: '', busy: false, onFix() {}, onServerBrowser() {} });
 import { EFFORTS, MODELS, PERMS, prettyModel } from '@desktop/options';
 import { I, Markdown, Sheet, base, short, toast } from './ui';
 import { OptionsSheet, isSimple, loadOpts, saveOpts, type Open, type RunOpts } from './Lists';
@@ -8,8 +11,8 @@ import { toAtts, type Att } from './files';
 
 const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
-export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
-  open: Open; sessions: LiveSession[] | null; accounts: Account[]; onBack(): void; onSwitch(sid: string): void;
+export function Chat({ open, sessions, accounts, onBack, onSwitch, onWeb, onNewChat }: {
+  open: Open; sessions: LiveSession[] | null; accounts: Account[]; onBack(): void; onSwitch(sid: string): void; onWeb(account: string, url: string): void; onNewChat(cwd: string): void;
 }) {
   const sid = 'sid' in open ? open.sid : null;
   const meta = sid ? sessions?.find((s) => s.sid === sid) : undefined;
@@ -79,7 +82,7 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
   useLayoutEffect(() => { const el = ta.current; if (el) { el.style.height = 'auto'; el.style.height = Math.min(160, el.scrollHeight) + 'px'; } }, [text]);
 
   const startWith = async (o: RunOpts, resume: string | null) => {
-    const r = await api<{ sid: string }>('/api/start', { cwd, model: o.model || undefined, effort: o.effort, permissionMode: o.permissionMode, account: o.account || undefined, resume: resume || undefined, title: title?.slice(0, 40), simple: isSimple() });
+    const r = await api<{ sid: string }>('/api/start', { cwd, model: o.model || undefined, effort: o.effort, permissionMode: o.permissionMode, account: o.account || undefined, resume: resume || undefined, title: title?.slice(0, 40), simple: isSimple(), browser: localStorage.getItem('rcc.browser') !== '0' });
     await new Promise((res) => setTimeout(res, 500));
     return r.sid;
   };
@@ -89,11 +92,11 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
       catch (e: any) { if (i >= 10 || !/fifo|attached/.test(e.message)) throw e; await new Promise((res) => setTimeout(res, 500)); }
     }
   };
-  const submit = async () => {
-    const msg = text.trim();
+  const submit = async (override?: string) => {
+    const msg = (override ?? text).trim();
     if ((!msg && !atts.length) || sending) return;
     setSending(true);
-    const body = { text: msg, files: atts.map(({ name, mime, data }) => ({ name, mime, data })) };
+    const body = { text: msg, files: override ? [] : atts.map(({ name, mime, data }) => ({ name, mime, data })) };
     try {
       if (running && sid) { await sendTo(sid, body); }
       else {
@@ -102,7 +105,7 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
         await sendTo(nsid, body);
         onSwitch(nsid);
       }
-      setText(''); setAtts([]); stick.current = true;
+      if (!override) { setText(''); setAtts([]); } stick.current = true;
     } catch (e: any) { toast(e.message); }
     setSending(false);
   };
@@ -151,6 +154,25 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
   };
 
   const [menu, setMenu] = useState(false);
+  const [cm, setCm] = useState<{ kind: '/' | '@'; start: number; items: MenuItem[] } | null>(null);
+  const cmSeq = useRef(0);
+  const onType = (v: string, caret: number) => {
+    setText(v);
+    const tr = trigger(v, caret);
+    if (!tr || !cwd) { setCm(null); return; }
+    const seq = ++cmSeq.current;
+    (tr.kind === '/' ? slashItems(cwd, tr.q) : fileItems(cwd, tr.q)).then((items) => { if (seq === cmSeq.current) setCm(items.length ? { kind: tr.kind, start: tr.start, items } : null); });
+  };
+  const pickCm = (m: MenuItem) => {
+    const el = ta.current!; const caret = el.selectionStart;
+    setCm(null); cmSeq.current++;
+    if (m.run === 'clear') { setText(''); onNewChat(cwd); return; }
+    const add = m.insert + (cm!.kind === '/' ? ' ' : '');
+    setText(text.slice(0, cm!.start) + add + text.slice(caret));
+    const pos = cm!.start + add.length;
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(pos, pos); });
+  };
+  const ctx = { cwd, busy: t.busy, onFix: (err: string) => submit(fixPrompt(err)), onServerBrowser: (url: string) => onWeb(opts.account || meta?.account || accounts.find((a) => a.active)?.id || 'default', url), lastKey: t.items[t.items.length - 1]?.key };
   const simple = isSimple();
   const resolved = prettyModel(t.resolvedModel || meta?.resolvedModel);
   const modelLabel = (resolved && (!opts.model || resolved.toLowerCase().startsWith(opts.model)) ? resolved : opts.model ? MODELS.find((m) => m.id === opts.model)?.label : null) || '默认模型';
@@ -165,10 +187,11 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
         <div className="tt"><b>{title || '对话'}</b><span>{!online && running ? '重新连接中…' : sub}</span></div>
         <button className="ib" onClick={() => setMenu(true)} aria-label="更多">{I.more}</button>
       </div>
+      <Ctx.Provider value={ctx}>
       <div className="scroll" ref={sc} onScroll={onScroll}>
         <div className="msgs">
           {loading && <div className="note">正在读取对话…</div>}
-          {!loading && !t.items.length && <div className="note">{sid ? '会话已就绪，说点什么吧' : '这段对话还没有内容'}</div>}
+          {!loading && !t.items.length && <div className="note">{/\/chat$/.test(cwd) ? '随便问：查资料、写东西、做表格、整理想法都行' : sid ? '会话已就绪，说点什么吧' : '这段对话还没有内容'}</div>}
           {groups.map((g, gi) => g.user
             ? <Row key={g.items[0].key} it={g.items[0]} answered={answered} onAnswer={answer} accounts={accounts} onSwitchAccount={switchAccount} currentAccount={opts.account || meta?.account} cwd={cwd} />
             : <div key={g.items[0]?.key || 'busy'} className="turn">
@@ -183,10 +206,12 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
           {!running && sid && !loading && <div className="note">会话已结束，继续发消息会接着这段对话</div>}
         </div>
       </div>
+      </Ctx.Provider>
       <div className="comp">
         <div className="box">
+          {cm && <div className="cmenu"><div className="cm-h">{cm.kind === '/' ? '命令' : '引用项目里的文件'}</div>{cm.items.map((m) => <button key={m.key} className="cm-i" onMouseDown={(e) => e.preventDefault()} onClick={() => pickCm(m)}><b>{m.label}</b>{m.desc && <span>{m.desc}</span>}</button>)}</div>}
           {atts.length > 0 && <div className="atts">{atts.map((a) => <div key={a.id} className="att">{a.preview ? <img src={a.preview} alt="" /> : <span>{a.name}</span>}<button onClick={() => setAtts((l) => l.filter((x) => x.id !== a.id))}>×</button></div>)}</div>}
-          <textarea ref={ta} rows={1} value={text} onChange={(e) => setText(e.target.value)} placeholder={running ? '继续说点什么…' : '发消息，接着这段对话'}
+          <textarea ref={ta} rows={1} value={text} onChange={(e) => onType(e.target.value, e.target.selectionStart)} onBlur={() => setTimeout(() => setCm(null), 200)} placeholder={running ? '继续说点什么… / 用命令，@ 引用文件' : '发消息，接着这段对话'}
             onPaste={async (e) => { const fs = Array.from(e.clipboardData.files); if (fs.length) { e.preventDefault(); try { setAtts([...atts, ...(await toAtts(fs))]); } catch (er: any) { toast(er.message); } } }} />
           <div className="bar">
             <button className="mic" onClick={() => fileIn.current?.click()} aria-label="附件">{I.clip}</button>
@@ -198,7 +223,7 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
             {SR && !t.busy && <button className={`mic ${listening ? 'on' : ''}`} style={{ marginLeft: 'auto' }} onClick={toggleMic} aria-label="语音输入">{I.mic}</button>}
             {t.busy && running && !text.trim() && !atts.length
               ? <button className="stop" onClick={interrupt} aria-label="停止"><i /></button>
-              : <button className="send" style={SR && !t.busy ? { marginLeft: 0 } : undefined} disabled={(!text.trim() && !atts.length) || sending} onClick={submit} aria-label="发送">{sending ? <span className="spin" style={{ borderTopColor: '#fff' }} /> : I.up}</button>}
+              : <button className="send" style={SR && !t.busy ? { marginLeft: 0 } : undefined} disabled={(!text.trim() && !atts.length) || sending} onClick={() => submit()} aria-label="发送">{sending ? <span className="spin" style={{ borderTopColor: '#fff' }} /> : I.up}</button>}
           </div>
         </div>
         <input ref={fileIn} type="file" multiple hidden onChange={async (e) => { const f = Array.from(e.target.files || []); e.target.value = ''; if (f.length) { try { setAtts([...atts, ...(await toAtts(f))]); } catch (er: any) { toast(er.message); } } }} />
@@ -252,6 +277,7 @@ function stepWord(t: Extract<Item, { kind: 'tool' }>) {
     case 'Write': return '写文件';
     case 'Edit': case 'MultiEdit': return '修改文件';
     case 'WebFetch': case 'WebSearch': return '上网查资料';
+    case 'mcp__rcc__browser_open': case 'mcp__rcc__browser_read': case 'mcp__rcc__browser_click': case 'mcp__rcc__browser_type': case 'mcp__rcc__browser_scroll': case 'mcp__rcc__browser_back': case 'mcp__rcc__browser_screenshot': return '用服务器浏览器上网';
     case 'Task': case 'Agent': return '分派子任务';
     case 'TodoWrite': return '列计划';
     case 'AskUserQuestion': return '等你回答';
@@ -264,10 +290,12 @@ function stepWord(t: Extract<Item, { kind: 'tool' }>) {
 function Changes({ it, sid, busy }: { it: Extract<Item, { kind: 'changes' }>; sid: string | null; busy: boolean }) {
   const [list, setList] = useState(false);
   const [doing, setDoing] = useState(false);
+  const ctxCwd = useContext(Ctx).cwd;
   const page = previewTarget(it.files);
   if (it.undone) return <div className="changes undone">✓ 这一轮的改动已撤销</div>;
   const preview = async () => {
     if (!sid) return toast('会话已结束，发一条消息后再预览');
+    if (native) { try { const r = await api<{ url: string }>('/api/preview', { sid }); native.openUrl(r.url + page!.split('/').map(encodeURIComponent).join('/')); } catch (e: any) { toast(e.message); } return; }
     const w = window.open('about:blank', '_blank');
     try { const r = await api<{ url: string }>('/api/preview', { sid }); const u = r.url + page!.split('/').map(encodeURIComponent).join('/'); if (w) w.location.href = u; else location.href = u; }
     catch (e: any) { w?.close(); toast(e.message); }
@@ -282,6 +310,7 @@ function Changes({ it, sid, busy }: { it: Extract<Item, { kind: 'changes' }>; si
   return (
     <div className="changes">
       <button className="ct" onClick={() => setList((l) => !l)}>{changeSummary(it.files, it.total)} <span className="cv">{list ? '⌃' : '⌄'}</span></button>
+      <FileCards paths={docFiles(it.files)} cwd={ctxCwd} />
       {list && <div className="cl mono">{it.files.map((f) => <div key={f.p}><span className={`fs ${f.s}`}>{f.s === 'A' ? '新建' : f.s === 'D' ? '删除' : '修改'}</span>{f.p}</div>)}</div>}
       <div className="ca">
         {page && <button className="y" onClick={preview}>预览</button>}
@@ -296,13 +325,14 @@ function Row({ it, answered, onAnswer, accounts, onSwitchAccount, currentAccount
   cwd?: string; it: Item; answered: Set<string>; onAnswer(req: string, d: 'allow' | 'deny', extra?: any): void; accounts: Account[]; onSwitchAccount(id: string): void; currentAccount?: string;
 }) {
   const [openTool, setOpenTool] = useState(false);
+  const ctx = useContext(Ctx);
   const rel = (x: string) => { const c = short(cwd); return c && x.startsWith(c + '/') ? x.slice(c.length + 1) : x; };
   switch (it.kind) {
     case 'user':
       return <div className="u">{it.text}{it.files?.length ? <div className="files">{it.files.map((f, i) => <span key={i}>{f.image ? I.img : I.clip}{f.name}</span>)}</div> : null}</div>;
-    case 'text': return <Markdown text={it.text} />;
+    case 'text': return <><Markdown text={it.text} /><LinkCards urls={extractLinks(it.text)} onServerBrowser={ctx.onServerBrowser} /></>;
     case 'thinking': return <details className="thinkbox"><summary>思考过程</summary><div>{it.text}</div></details>;
-    case 'note': return <div className={`note ${it.error ? 'err' : ''}`}>{it.text}</div>;
+    case 'note': return it.error ? <ErrCard text={it.text} last={ctx.lastKey === it.key} /> : <div className="note">{it.text}</div>;
     case 'changes': return <Changes it={it} sid={sid} busy={busy} />;
     case 'perm': {
       const done = it.outcome || answered.has(it.req);
@@ -358,6 +388,20 @@ function Row({ it, answered, onAnswer, accounts, onSwitchAccount, currentAccount
     }
   }
   return null;
+}
+
+function ErrCard({ text, last }: { text: string; last: boolean }) {
+  const ctx = useContext(Ctx);
+  const [more, setMore] = useState(false);
+  const [sent, setSent] = useState(false);
+  const plain = /overloaded|529/i.test(text) ? 'Claude 那边现在太忙了，稍等再试' : /context|too long/i.test(text) ? '对话太长了，输入 /compact 压缩一下' : /max_turns/i.test(text) ? '步骤太多，做到一半停下了' : '这一步没做成';
+  return (
+    <div className="errcard">
+      <b>{plain}</b>
+      {more ? <pre className="res">{text}</pre> : <button className="more" onClick={() => setMore(true)}>查看原始信息 ⌄</button>}
+      {last && !sent && <div className="acts"><button className="y" disabled={ctx.busy} onClick={() => { setSent(true); ctx.onFix(text); }}>让 Claude 修好</button></div>}
+    </div>
+  );
 }
 
 function AskCard({ it, done, onAnswer }: { it: Extract<Item, { kind: 'perm' }>; done: boolean; onAnswer(req: string, d: 'allow' | 'deny', extra?: any): void }) {

@@ -112,6 +112,7 @@ export interface StartOptions {
   mkdir?: boolean;
   account?: string;
   simple?: boolean;
+  browser?: boolean; // let Claude drive the server's Chrome (default on)
 }
 
 export interface Prefs {
@@ -131,6 +132,7 @@ export interface Prefs {
   updateUrl: string; // JSON manifest: {"version":"x.y.z","notes":"...","url":"..."}
   lastUpdateCheck?: number;
   simple: boolean; // plain-language mode for people who don't read code
+  browser: boolean; // let Claude use the server's Chrome
 }
 
 export interface MobileDevice { id: string; name: string; createdAt: number | string; lastSeen: number; via: string }
@@ -183,7 +185,11 @@ export interface RcApi {
     stop(sid: string): Promise<void>;
     restore(sid: string, checkpoint: string): Promise<void>;
     preview(sid: string, page?: string): Promise<void>;
+    previewPort(port: number, path?: string): Promise<void>;
   };
+  /** rcc helpers: unfurl, files, commands, memory, finfo, sched-* (JSON out) */
+  x(argv: string[], stdin?: string): Promise<any>;
+  files: { open(remotePath: string): Promise<void>; save(remotePath: string): Promise<string | null> };
   auth: {
     status(account?: string): Promise<AuthStatus>;
     loginCode(code?: string): Promise<void>;

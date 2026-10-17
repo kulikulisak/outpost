@@ -5,12 +5,14 @@ import { ServerForm } from './ServerForm';
 import { EFFORTS, MODELS, PERMS, prettyModel } from '../options';
 import type { MobileStatus, RelayStatus, Account, AuthStatus, ConnState, Doctor, Prefs, ServerConfig, UpdateInfo } from '../../shared/types';
 
-export type Page = 'server' | 'env' | 'account' | 'model' | 'phone' | 'look';
+export type Page = 'server' | 'env' | 'account' | 'model' | 'memory' | 'sched' | 'phone' | 'look';
 const NAV: { id: Page; label: string; icon: ReactNode }[] = [
   { id: 'server', label: '服务器', icon: I.server() },
   { id: 'env', label: '环境', icon: I.wrench() },
   { id: 'account', label: 'Claude 账号', icon: I.user() },
   { id: 'model', label: '模型与对话', icon: I.chat() },
+  { id: 'memory', label: '关于我', icon: I.user() },
+  { id: 'sched', label: '定时任务', icon: I.clock(15) },
   { id: 'phone', label: '手机', icon: I.phone() },
   { id: 'look', label: '外观', icon: I.sun() },
 ];
@@ -51,6 +53,8 @@ export function SettingsPage(p: {
           {p.page === 'account' && <AccountPage {...p} />}
           {p.page === 'model' && <ModelPage {...p} />}
           {p.page === 'look' && <LookPage {...p} />}
+          {p.page === 'memory' && <MemoryPage conn={p.conn} />}
+          {p.page === 'sched' && <SchedPage conn={p.conn} accounts={p.accounts} />}
           {p.page === 'phone' && <PhonePage conn={p.conn} />}
         </div>
       </div>
@@ -249,6 +253,11 @@ function ModelPage({ prefs, setPrefs, resolved }: Parameters<typeof SettingsPage
         <button className={`tog ${prefs.simple !== false ? 'on' : ''}`} onClick={() => setPrefs({ simple: prefs.simple === false })} />
       </Row>
     </div></div>
+    <div className="grp"><h3>能力</h3><div className="list">
+      <Row t="让 Claude 使用服务器浏览器" sub="需要登录网站、点按钮、填表时，Claude 会操作服务器上的 Chrome，你可以在「网页版」窗口里实时看着。新会话生效">
+        <button className={`tog ${prefs.browser !== false ? 'on' : ''}`} onClick={() => setPrefs({ browser: prefs.browser === false })} />
+      </Row>
+    </div></div>
     <div className="grp"><h3>默认值</h3><div className="list">
       <Row t="模型" sub="由 Claude Code 解析为最新版本">
         <select className="sel" value={prefs.model} onChange={(e) => setPrefs({ model: e.target.value })}>
@@ -409,4 +418,110 @@ function PhonePage({ conn }: { conn: ConnState }) {
       </div>
     </Modal>}
   </>;
+}
+
+// ---------- 关于我: ~/.claude/CLAUDE.md on the server, read by every conversation and every account ----------
+const MEMORY_HINT = `# 关于我
+- 称呼：
+- 我平时用中文交流，回复请用简体中文
+- 我不会写代码，请用大白话解释
+
+# 我的偏好
+- 
+`;
+function MemoryPage({ conn }: { conn: ConnState }) {
+  const [text, setText] = useState<string | null>(null);
+  const [saved, setSaved] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const connected = conn.state === 'connected';
+  useEffect(() => { if (connected) rc.x(['memory']).then((r) => { setText(r.text || ''); setSaved(r.text || ''); }).catch((e) => setErr(e.message)); }, [connected]);
+  const save = async () => { setBusy(true); setErr(''); try { await rc.x(['memory', '--set'], text || ''); setSaved(text || ''); } catch (e: any) { setErr(e.message); } finally { setBusy(false); } };
+  return <>
+    <h2>关于我</h2>
+    <div className="sub">写下 Claude 应该一直记得的事：怎么称呼你、你的习惯和偏好。每个对话、每个账号都会读到。</div>
+    {!connected ? <div className="sub">先连接服务器。</div> : text === null ? <div className="spin" /> : <>
+      <textarea className="input memo" value={text} placeholder={MEMORY_HINT} onChange={(e) => setText(e.target.value)} spellCheck={false} />
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 }}>
+        <button className="btn p" disabled={busy || text === saved} onClick={save}>{busy ? <div className="spin" /> : '保存'}</button>
+        {!text && <button className="btn" onClick={() => setText(MEMORY_HINT)}>用模板开始</button>}
+        <span style={{ fontSize: 12.5, color: err ? 'var(--delt)' : 'var(--faint)' }}>{err || (text === saved ? '已保存，新消息就会用上' : '有改动没保存')}</span>
+      </div>
+      <div style={{ marginTop: 10, fontSize: 12.5, color: 'var(--faint)' }}>保存在服务器的 ~/.claude/CLAUDE.md。你也可以直接在对话里说「记住……」，Claude 会帮你写进去。</div>
+    </>}
+  </>;
+}
+
+// ---------- 定时任务: Claude does something on a schedule, even with this computer off ----------
+interface Sched { id?: string; name: string; prompt: string; cwd: string; kind: 'daily' | 'weekly' | 'interval' | 'once'; time: string; days: number[]; every: number; date?: string | null; account?: string | null; enabled: boolean; tz?: string; lastRun?: number | null; lastError?: string | null }
+const DOW = ['日', '一', '二', '三', '四', '五', '六'];
+export function schedText(s: Sched) {
+  if (s.kind === 'interval') return `每 ${s.every >= 60 && s.every % 60 === 0 ? `${s.every / 60} 小时` : `${s.every} 分钟`}`;
+  if (s.kind === 'weekly') return `每周${(s.days || []).map((d) => DOW[d]).join('、') || '？'} ${s.time}`;
+  if (s.kind === 'once') return `${s.date || ''} ${s.time} 一次`;
+  return `每天 ${s.time}`;
+}
+function SchedPage({ conn, accounts }: { conn: ConnState; accounts: Account[] }) {
+  const [list, setList] = useState<Sched[] | null>(null);
+  const [edit, setEdit] = useState<Sched | null>(null);
+  const [err, setErr] = useState('');
+  const connected = conn.state === 'connected';
+  const load = () => rc.x(['sched-list']).then(setList).catch((e) => setErr(e.message));
+  useEffect(() => { if (connected) load(); }, [connected]);
+  const save = async (s: Sched) => { await rc.x(['sched-put'], JSON.stringify({ ...s, tz: s.tz || Intl.DateTimeFormat().resolvedOptions().timeZone })); setEdit(null); load(); };
+  return <>
+    <h2>定时任务</h2>
+    <div className="sub">到点了让 Claude 自动做一件事，比如每天早上整理新闻、每周汇总。在服务器上运行，电脑关着也会做，做完会推送到手机。</div>
+    {!connected ? <div className="sub">先连接服务器。</div> : <>
+      <div className="grp"><div className="list">
+        {list?.length === 0 && <Row t="还没有定时任务" sub="点下面的按钮建一个" />}
+        {list?.map((s) => (
+          <Row key={s.id} t={<>{s.name}{!s.enabled && <span className="pill">已暂停</span>}</>} sub={`${schedText(s)} · ${s.lastRun ? `上次 ${new Date(s.lastRun).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '还没运行过'}${s.lastError ? ` · 出错：${s.lastError}` : ''}`}>
+            <button className="btn" onClick={async () => { await rc.x(['sched-run', s.id!]).catch((e) => setErr(e.message)); load(); }}>现在运行</button>
+            <button className="btn" onClick={() => setEdit(s)}>编辑</button>
+          </Row>
+        ))}
+      </div></div>
+      {err && <div className="err-text">{err}</div>}
+      <button className="btn p" onClick={() => setEdit({ name: '', prompt: '', cwd: '~/chat', kind: 'daily', time: '08:00', days: [1, 2, 3, 4, 5], every: 60, enabled: true })}>{I.plus()} 新建定时任务</button>
+      <div style={{ marginTop: 10, fontSize: 12.5, color: 'var(--faint)' }}>运行结果会出现在侧边栏的会话里（标题带 ⏰）。需要服务器上的手机服务在运行，保存时会自动开启。</div>
+    </>}
+    {edit && <SchedModal s={edit} accounts={accounts} onClose={() => setEdit(null)} onSave={save} onRemove={edit.id ? async () => { if (await confirmDialog({ title: '删除这个定时任务？', ok: '删除' })) { await rc.x(['sched-remove', edit.id!]); setEdit(null); load(); } } : undefined} />}
+  </>;
+}
+function SchedModal({ s: init, accounts, onClose, onSave, onRemove }: { s: Sched; accounts: Account[]; onClose(): void; onSave(s: Sched): Promise<void>; onRemove?: () => void }) {
+  const [s, setS] = useState(init);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const set = (p: Partial<Sched>) => setS((x) => ({ ...x, ...p }));
+  return (
+    <Modal onClose={onClose}>
+      <h3>{init.id ? '编辑定时任务' : '新建定时任务'}</h3>
+      <div className="field"><label>要让 Claude 做什么</label>
+        <textarea className="input" rows={4} value={s.prompt} placeholder="例如：搜一下今天关于 AI 的重要新闻，挑 5 条，用中文写成简短的早报" onChange={(e) => set({ prompt: e.target.value })} /></div>
+      <div className="field"><label>名字</label>
+        <input className="input" value={s.name} placeholder="例如：AI 早报" onChange={(e) => set({ name: e.target.value })} /></div>
+      <div className="field"><label>什么时候</label>
+        <div className="seg" style={{ alignSelf: 'flex-start' }}>{([['daily', '每天'], ['weekly', '每周'], ['interval', '每隔'], ['once', '一次']] as const).map(([k, l]) => <button key={k} className={s.kind === k ? 'on' : ''} onClick={() => set({ kind: k })}>{l}</button>)}</div>
+        {s.kind === 'weekly' && <div className="seg" style={{ alignSelf: 'flex-start' }}>{DOW.map((d, i) => <button key={i} className={s.days.includes(i) ? 'on' : ''} onClick={() => set({ days: s.days.includes(i) ? s.days.filter((x) => x !== i) : [...s.days, i].sort() })}>{d}</button>)}</div>}
+        {s.kind === 'interval'
+          ? <select className="sel" style={{ alignSelf: 'flex-start' }} value={s.every} onChange={(e) => set({ every: Number(e.target.value) })}>{[15, 30, 60, 120, 180, 360, 720].map((m) => <option key={m} value={m}>{m < 60 ? `${m} 分钟` : `${m / 60} 小时`}</option>)}</select>
+          : <div style={{ display: 'flex', gap: 8 }}>
+            {s.kind === 'once' && <input className="input" type="date" value={s.date || ''} onChange={(e) => set({ date: e.target.value })} style={{ width: 170 }} />}
+            <input className="input" type="time" value={s.time} onChange={(e) => set({ time: e.target.value })} style={{ width: 130 }} />
+          </div>}
+      </div>
+      <div className="field"><label>在哪个文件夹里做</label>
+        <input className="input" value={s.cwd} onChange={(e) => set({ cwd: e.target.value })} /></div>
+      {accounts.length > 1 && <div className="field"><label>用哪个账号</label>
+        <select className="sel" value={s.account || ''} onChange={(e) => set({ account: e.target.value || null })}><option value="">当前账号</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>}
+      <label className="check"><input type="checkbox" checked={s.enabled} onChange={(e) => set({ enabled: e.target.checked })} />启用</label>
+      {err && <div className="err-text">{err}</div>}
+      <div className="actions">
+        {onRemove && <button className="btn danger" onClick={onRemove} style={{ marginRight: 'auto' }}>删除</button>}
+        <button className="btn" onClick={onClose}>取消</button>
+        <button className="btn p" disabled={busy || !s.prompt.trim() || (s.kind === 'weekly' && !s.days.length) || (s.kind === 'once' && !s.date)} onClick={async () => { setBusy(true); setErr(''); try { await onSave({ ...s, name: s.name.trim() || s.prompt.trim().slice(0, 20) }); } catch (e: any) { setErr(e.message); } finally { setBusy(false); } }}>{busy ? <div className="spin" /> : '保存'}</button>
+      </div>
+    </Modal>
+  );
 }

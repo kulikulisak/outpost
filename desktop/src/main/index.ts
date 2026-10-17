@@ -34,6 +34,8 @@ function createWindow() {
   });
   win.loadFile(path.join(__dirname, '../renderer/index.html'));
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
+  // a link clicked in a chat message must never replace the app: open it in the computer's browser
+  win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('file:')) { e.preventDefault(); if (/^https?:/.test(url)) shell.openExternal(url); } });
   win.on('closed', () => { win = null; });
 }
 
@@ -145,6 +147,24 @@ handle('claude:interrupt', (sid: string) => remote.interrupt(sid));
 handle('claude:stop', (sid: string) => remote.stop(sid));
 handle('claude:restore', (sid: string, c: string) => remote.restore(sid, c));
 handle('claude:preview', async (sid: string, page?: string) => openPreview(await remote.previewUrl(sid, page || '')));
+handle('claude:previewPort', async (port: number, p?: string) => openPreview(await remote.previewPortUrl(port, p || '/')));
+handle('rcc:x', (argv: string[], stdin?: string) => remote.x(argv, stdin));
+handle('files:open', async (remotePath: string) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'outpost-'));
+  const local = path.join(dir, path.basename(remotePath).replace(/[\\/:*?"<>|]/g, '_'));
+  await remote.getFile(remotePath, local);
+  const err = await shell.openPath(local);
+  if (err) throw new Error(err);
+});
+ipcMain.handle('files:save', async (e, remotePath: string) => {
+  try {
+    const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender) || win!, { defaultPath: path.join(app.getPath('downloads'), path.basename(remotePath)) });
+    if (r.canceled || !r.filePath) return { ok: true, data: null };
+    await remote.getFile(remotePath, r.filePath);
+    shell.showItemInFolder(r.filePath);
+    return { ok: true, data: r.filePath };
+  } catch (err: any) { return { ok: false, error: String(err?.message || err) }; }
+});
 
 handle('mobile:status', () => remote.mobileStatus());
 handle('mobile:enable', () => remote.mobileEnable());
