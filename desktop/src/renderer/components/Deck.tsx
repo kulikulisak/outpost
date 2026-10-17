@@ -1,4 +1,5 @@
-// Portrait cards fanned out like a hand of cards: used for files Claude made and links it found.
+// Cards for files Claude made and links it found: floating in 3D like prints on a table.
+// Clicking one opens a dark viewer where the cards sit on a 3D carousel.
 // Pure presentation, shared by the desktop app and the phone app (which imports it via @desktop).
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -13,16 +14,22 @@ export interface DeckItem {
   thumb?: string | null;  // undefined = still loading, null = none
   icon?: string | null;   // favicon for links
   wide?: boolean;         // pictures that look better landscape (og:image)
-  note?: string;          // small line in the lightbox (e.g. "预览由服务器抓取")
-  glyph?: string;         // big text on the tile instead of the badge (":5173")
+  note?: string;          // small line in the viewer (e.g. "预览由服务器抓取")
+  glyph?: string;         // text on the tile instead of the badge (":5173")
   actions: DeckAction[];
 }
 
-// alternate small tilts so the row reads as a loose fan, not a grid
-const TILT = [-2.5, 1.5, -1, 2, -1.5, 1, -0.5];
+// each card leans a different way in space, so the row reads as loose prints, not a grid
+const POSE = [
+  'rotateY(18deg) rotateX(5deg) rotateZ(-2deg)',
+  'rotateY(-14deg) rotateX(4deg) rotateZ(1.5deg)',
+  'rotateY(10deg) rotateX(-3deg) rotateZ(-1deg)',
+  'rotateY(-18deg) rotateX(5deg) rotateZ(2deg)',
+  'rotateY(14deg) rotateX(-2deg) rotateZ(-1.5deg)',
+];
 
 export function Deck({ items }: { items: DeckItem[] }) {
-  const [open, setOpen] = useState<{ item: DeckItem; from: DOMRect } | null>(null);
+  const [open, setOpen] = useState<{ i: number; from: DOMRect } | null>(null);
   if (!items.length) return null;
   return (
     <>
@@ -30,70 +37,141 @@ export function Deck({ items }: { items: DeckItem[] }) {
         {items.map((it, i) => (
           <button
             key={it.key}
-            className="pcard"
-            style={{ ['--i' as any]: i, ['--r' as any]: `${items.length === 1 ? -1.5 : TILT[i % TILT.length]}deg` }}
-            onClick={(e) => setOpen({ item: it, from: (e.currentTarget as HTMLElement).getBoundingClientRect() })}
+            className="pslot"
+            style={{ ['--i' as any]: i, ['--pose' as any]: items.length === 1 ? 'rotateY(14deg) rotateX(4deg) rotateZ(-1.5deg)' : POSE[i % POSE.length] }}
+            onClick={(e) => setOpen({ i, from: ((e.currentTarget as HTMLElement).querySelector('.pcard') as HTMLElement).getBoundingClientRect() })}
             title={it.title}
           >
-            <Face it={it} />
+            <div className={`pcard ${it.wide && it.thumb ? 'wide' : ''}`}><Face it={it} /></div>
+            <div className="pc-cap">
+              <span className="pc-title">{it.title}</span>
+              <span className="pc-badge">{it.icon ? <img src={it.icon} alt="" /> : <i style={{ background: it.color }} />}{it.badge}</span>
+            </div>
           </button>
         ))}
       </div>
-      {open && <Lightbox item={open.item} from={open.from} onClose={() => setOpen(null)} />}
+      {open && <Viewer items={items} start={open.i} from={open.from} onClose={() => setOpen(null)} />}
     </>
   );
 }
 
 function Face({ it, big }: { it: DeckItem; big?: boolean }) {
-  return <>
-    <div className={`pc-pic ${it.thumb ? 'has' : ''} ${it.wide ? 'wide' : ''}`} style={{ ['--c' as any]: it.color }}>
+  if (it.thumb) return <img className="pc-img" src={it.thumb} alt="" draggable={false} onLoad={big ? (e) => {
+    // in the viewer, the card takes the picture's own shape (within reason)
+    const im = e.currentTarget; const ar = im.naturalWidth / im.naturalHeight;
+    if (ar > 0 && !it.wide) im.parentElement?.style.setProperty('--ar', String(Math.max(0.62, Math.min(1.5, ar))));
+  } : undefined} />;
+  return (
+    <div className="pc-tile" style={{ ['--c' as any]: it.color }}>
       {it.thumb === undefined && <div className="pc-shimmer" />}
-      {it.thumb ? <img src={it.thumb} alt="" draggable={false} /> : it.thumb === null && (
-        it.icon ? <img className="pc-fav" src={it.icon} alt="" /> : <span className="pc-ext">{it.glyph ?? it.badge.slice(0, big ? 8 : 5)}</span>
-      )}
+      {it.thumb === null && (it.icon
+        ? <img className="pc-fav" src={it.icon} alt="" />
+        : <span className="pc-ext">{it.glyph ?? it.badge.slice(0, big ? 8 : 5)}</span>)}
+      {it.thumb === null && big && <span className="pc-tname">{it.title}</span>}
     </div>
-    <div className="pc-meta">
-      <div className="pc-badge">{it.icon && it.thumb ? <img src={it.icon} alt="" /> : <i style={{ background: it.color }} />}<span>{it.badge}</span></div>
-      <div className="pc-title">{it.title}</div>
-      {it.sub && <div className="pc-sub">{it.sub}</div>}
-    </div>
-  </>;
+  );
 }
 
-function Lightbox({ item, from, onClose }: { item: DeckItem; from: DOMRect; onClose(): void }) {
-  const panel = useRef<HTMLDivElement>(null);
+function Viewer({ items, start, from, onClose }: { items: DeckItem[]; start: number; from: DOMRect; onClose(): void }) {
+  const [cur, setCur] = useState(start);
   const [closing, setClosing] = useState(false);
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
-  const close = () => { setClosing(true); setTimeout(onClose, 220); };
-  // grow out of the card that was clicked
+  const first = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ x: number; moved: boolean } | null>(null);
+  const n = items.length;
+  const go = (i: number) => { setErr(''); setCur(Math.max(0, Math.min(n - 1, i))); };
+  const close = () => { setClosing(true); setTimeout(onClose, 260); };
+
   useEffect(() => {
-    const el = panel.current; if (!el) return;
-    const to = el.getBoundingClientRect();
-    const dx = from.left + from.width / 2 - (to.left + to.width / 2);
-    const dy = from.top + from.height / 2 - (to.top + to.height / 2);
-    el.animate([
-      { transform: `translate(${dx}px, ${dy}px) scale(${from.width / to.width}) rotate(-1.5deg)`, opacity: 0.5 },
-      { transform: 'none', opacity: 1 },
-    ], { duration: 420, easing: 'cubic-bezier(.22,1,.36,1)' });
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+    // the opened card grows out of the one that was clicked
+    const el = first.current;
+    if (el) {
+      const to = el.getBoundingClientRect();
+      const dx = from.left + from.width / 2 - (to.left + to.width / 2);
+      const dy = from.top + from.height / 2 - (to.top + to.height / 2);
+      el.animate([
+        { transform: `translate(${dx}px, ${dy}px) scale(${from.width / to.width}) rotateY(16deg) rotateX(5deg)`, opacity: 0.6 },
+        { transform: 'none', opacity: 1 },
+      ], { duration: 520, easing: 'cubic-bezier(.22,1,.36,1)' });
+    }
+    const prevOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prevOverflow; };
+  }, []);
+
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); close(); }
+      else if (e.key === 'ArrowRight') { e.stopPropagation(); go(cur + 1); }
+      else if (e.key === 'ArrowLeft') { e.stopPropagation(); go(cur - 1); }
+    };
     window.addEventListener('keydown', k, true);
     return () => window.removeEventListener('keydown', k, true);
-  }, []);
+  }, [cur]);
+
+  const it = items[cur];
   const run = async (a: DeckAction) => {
     setBusy(a.label); setErr('');
     try { await a.run(); } catch (e: any) { setErr(String(e?.message || e)); } finally { setBusy(''); }
   };
+
   return createPortal(
-    <div className={`deck-lb ${closing ? 'out' : ''}`} onClick={close}>
-      <div className="deck-panel" ref={panel} onClick={(e) => e.stopPropagation()}>
-        <div className="pcard big"><Face it={item} big /></div>
-        <div className="deck-acts">
-          {item.actions.map((a) => (
+    <div
+      className={`dv ${closing ? 'out' : ''}`}
+      onPointerDown={(e) => { drag.current = { x: e.clientX, moved: false }; }}
+      onPointerMove={(e) => { if (drag.current && Math.abs(e.clientX - drag.current.x) > 8) drag.current.moved = true; }}
+      onPointerUp={(e) => {
+        const d = drag.current; drag.current = null;
+        if (d && Math.abs(e.clientX - d.x) > 50) go(cur + (e.clientX < d.x ? 1 : -1));
+      }}
+    >
+      <div className="dv-top">
+        <button className="dv-round" onClick={close} aria-label="关闭">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+        <div className="dv-title"><b>{it.title}</b>{it.sub && <span>{it.sub}</span>}</div>
+        <div className="dv-acts">
+          {it.actions.map((a) => (
             <button key={a.label} className={a.primary ? 'p' : ''} disabled={!!busy} onClick={() => run(a)}>{busy === a.label ? '…' : a.label}</button>
           ))}
         </div>
-        {(err || item.note) && <div className={`deck-note ${err ? 'err' : ''}`}>{err || item.note}</div>}
+      </div>
+
+      <div className="dv-stage" onClick={(e) => { if (e.target === e.currentTarget && !closing) close(); }}>
+        {items.map((x, i) => {
+          const d = i - cur, a = Math.abs(d);
+          return (
+            <div
+              key={x.key}
+              ref={i === start ? first : undefined}
+              className={`dv-card ${x.wide && x.thumb ? 'wide' : ''} ${d === 0 ? 'on' : ''}`}
+              style={{
+                transform: `translateX(calc(-50% + ${d * 68}%)) translateY(-50%) translateZ(${-a * 240}px) rotateY(${-Math.sign(d) * Math.min(a, 2) * 26}deg)`,
+                filter: d ? `blur(${Math.min(a, 2) * 4}px) brightness(.8)` : 'none',
+                opacity: a > 2 ? 0 : d ? 0.6 : 1,
+                zIndex: 10 - a,
+                pointerEvents: a > 2 ? 'none' : undefined,
+              }}
+              onClick={(e) => { e.stopPropagation(); if (drag.current?.moved) return; if (d) go(i); }}
+            >
+              <Face it={x} big />
+            </div>
+          );
+        })}
+      </div>
+
+      {n > 1 && <>
+        <button className="dv-round dv-arrow l" disabled={cur === 0} onClick={() => go(cur - 1)} aria-label="上一个">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
+        </button>
+        <button className="dv-round dv-arrow r" disabled={cur === n - 1} onClick={() => go(cur + 1)} aria-label="下一个">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7" /></svg>
+        </button>
+      </>}
+
+      <div className="dv-foot">
+        {(err || it.note) && <div className={`dv-note ${err ? 'err' : ''}`}>{err || it.note}</div>}
+        {n > 1 && <div className="dv-count">{cur + 1} / {n}</div>}
       </div>
     </div>,
     document.body,
