@@ -20,6 +20,7 @@ export function SettingsPage({ me, connected, latency, onUnpaired }: { me: Me | 
   const [theme, setTheme] = useState(localStorage.getItem('rcc.theme') || 'auto');
   const [fs, setFs] = useState(Number(localStorage.getItem('rcc.fs') || 15));
   const [bypass, setBypass] = useState(localStorage.getItem('rcc.allowBypass') === '1');
+  const [simple, setSimple] = useState(localStorage.getItem('rcc.simple') !== '0');
   const [keep, setKeep] = useState(localStorage.getItem('rcc.keepBrowser') === '1');
   const [confirmUnpair, setConfirmUnpair] = useState(false);
   const relay = location.protocol === 'http:' && !/^(localhost|127\.)/.test(location.hostname);
@@ -80,6 +81,7 @@ export function SettingsPage({ me, connected, latency, onUnpaired }: { me: Me | 
 
         <div className="sec" style={{ paddingTop: 8 }}><span>安全</span></div>
         <div className="card">
+          <div className="opt"><div><div className="n" style={{ fontWeight: 500 }}>省心模式</div><div className="d">用大白话说做了什么，过程收起来，每轮可一键撤销</div></div><Switch on={simple} onChange={(v) => { setSimple(v); localStorage.setItem('rcc.simple', v ? '1' : '0'); }} /></div>
           <div className="opt"><div><div className="n" style={{ fontWeight: 500 }}>手机上允许「全部允许」权限模式</div><div className="d">打开后，新任务可以选不再询问</div></div><Switch on={bypass} onChange={(v) => { setBypass(v); localStorage.setItem('rcc.allowBypass', v ? '1' : '0'); }} /></div>
           <div className="opt"><div><div className="n" style={{ fontWeight: 500 }}>离开网页版后保留 VPS 浏览器</div><div className="d">关掉时 1 分钟后自动关闭，省内存</div></div><Switch on={keep} onChange={(v) => { setKeep(v); localStorage.setItem('rcc.keepBrowser', v ? '1' : '0'); }} /></div>
           <button className="opt" onClick={() => setConfirmUnpair(true)}><div className="n" style={{ fontWeight: 500, color: 'var(--red)' }}>解除这台手机的配对</div></button>

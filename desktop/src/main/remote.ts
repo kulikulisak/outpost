@@ -50,7 +50,7 @@ export class Remote {
         host: cfg.host, port: cfg.port, username: cfg.username,
         ...(cfg.auth === 'key' ? { privateKey: sec.privateKey, passphrase: sec.passphrase || undefined } : { password: sec.password }),
       });
-      this.webPortLocal = null; this.cdpLocal.clear(); this.servePortCache = null; this.onReconnect?.();
+      this.webPortLocal = null; this.cdpLocal.clear(); this.servePortCache = null; this.previewLocal = null; this.onReconnect?.();
       const t0 = Date.now();
       await this.ssh.exec('true');
       this.setState({ state: 'connected', serverId: id, latencyMs: Date.now() - t0 });
@@ -202,6 +202,7 @@ echo "websockify=$(command -v websockify >/dev/null && echo 1)"`;
     if (o.title) a.push(`--title ${q(o.title)}`);
     if (o.mkdir) a.push('--mkdir');
     if (o.account) a.push(`--account ${q(o.account)}`);
+    if (o.simple) a.push('--simple');
     return this.rccJson<{ sid: string; cwd: string }>(`start ${a.join(' ')}`);
   }
   async send(sid: string, text: string, files?: { local: string; name: string; mime: string }[]) {
@@ -220,6 +221,14 @@ echo "websockify=$(command -v websockify >/dev/null && echo 1)"`;
   }
   async interrupt(sid: string) { await this.rcc(`interrupt ${q(sid)}`); }
   async stop(sid: string) { await this.rcc(`stop ${q(sid)}`); }
+  async restore(sid: string, ckpt: string) { await this.rcc(`restore ${q(sid)} ${q(ckpt)}`); }
+  private previewLocal: { remote: number; local: number } | null = null;
+  /** URL on this computer that shows the session's project folder (via an ssh tunnel to rcc's preview server). */
+  async previewUrl(sid: string, page = '') {
+    const r = await this.rccJson<{ port: number; base: string }>(`preview ${q(sid)}`);
+    if (!this.previewLocal || this.previewLocal.remote !== r.port) this.previewLocal = { remote: r.port, local: await this.ssh.forward(r.port) };
+    return `http://127.0.0.1:${this.previewLocal.local}${r.base}${page.split('/').map(encodeURIComponent).join('/')}`;
+  }
 
   // ---------- live output, resumable by byte offset ----------
   subscribe(sid: string) {

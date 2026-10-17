@@ -28,7 +28,7 @@ const MROOT = path.join(ROOT, 'mobile');
 const SESS = path.join(ROOT, 'sessions');
 const RCC = process.env.RCC_BIN || (fs.existsSync(path.join(HERE, 'rcc')) ? path.join(HERE, 'rcc') : path.join(HERE, 'rcc.mjs'));
 const WEB_DIRS = [path.join(MROOT, 'web'), path.join(HERE, 'web')];
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 const F = { cfg: path.join(MROOT, 'config.json'), dev: path.join(MROOT, 'devices.json'), pair: path.join(MROOT, 'pair.json'), subs: path.join(MROOT, 'push.json') };
 
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
@@ -327,6 +327,19 @@ function serveStatic(req, res, pathname) {
   fs.createReadStream(file).pipe(res);
 }
 
+// previews: an unguessable per-open token in the path (iframes and new tabs can't send our auth header);
+// the page itself is sandboxed by the preview server's CSP so it can't read this origin's storage
+const previews = new Map(); // token -> { sid, port, exp }
+function proxyPreview(req, res, url) {
+  const m = url.pathname.match(/^\/preview\/([0-9a-f]{24})(\/.*)?$/);
+  const pv = m && previews.get(m[1]);
+  if (!pv || pv.exp < Date.now()) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('预览链接已过期，回到对话里再点一次「预览」'); }
+  if (!m[2]) { res.writeHead(302, { Location: `/preview/${m[1]}/` }); return res.end(); }
+  const up = http.request({ host: '127.0.0.1', port: pv.port, path: `/s/${pv.sid}${m[2]}${url.search}`, method: 'GET' }, (r) => { res.writeHead(r.statusCode || 502, r.headers); r.pipe(res); });
+  up.on('error', () => { if (!res.headersSent) { res.writeHead(502); } res.end('预览服务没响应'); });
+  up.end();
+}
+
 const failures = new Map(); // ip -> { n, until }
 function limited(ip) { const f = failures.get(ip); return f && f.until > Date.now(); }
 function fail(ip) { const f = failures.get(ip) || { n: 0, until: 0 }; f.n++; if (f.n >= 10) { f.until = Date.now() + 5 * 60 * 1000; f.n = 0; } failures.set(ip, f); }
@@ -352,6 +365,7 @@ async function api(req, res, url, dev) {
     if (b.permissionMode) args.push('--permission-mode', String(b.permissionMode));
     if (b.worktree) args.push('--worktree', String(b.worktree), '--base', String(b.base || 'HEAD'));
     if (b.mkdir) args.push('--mkdir');
+    if (b.simple) args.push('--simple');
     return send(res, 200, await rccJ(args));
   }
   if (p === '/api/send' && M === 'POST') {
@@ -374,6 +388,15 @@ async function api(req, res, url, dev) {
   }
   if (p === '/api/answer' && M === 'POST') { const b = await readBody(req); await rcc(['answer', String(b.sid), String(b.req), b.decision === 'allow' ? 'allow' : 'deny', ...(b.message ? [String(b.message)] : []), ...(b.rule ? ['--rule', String(b.rule)] : [])]); return send(res, 200, { ok: true }); }
   if (p === '/api/push/prefs' && M === 'POST') { const b = await readBody(req); const subs = readJ(F.subs, []); for (const s of subs) if (s.deviceId === dev.id) s.prefs = b.prefs || null; writeJ(F.subs, subs); return send(res, 200, { ok: true }); }
+  if (p === '/api/restore' && M === 'POST') { const b = await readBody(req); return send(res, 200, await rccJ(['restore', String(b.sid), String(b.checkpoint)])); }
+  if (p === '/api/preview' && M === 'POST') {
+    const b = await readBody(req); const sid = String(b.sid || '');
+    if (!/^[0-9a-f]{6,20}$/.test(sid)) return send(res, 400, { error: 'bad sid' });
+    const r = await rccJ(['preview', sid]);
+    const tok = crypto.randomBytes(12).toString('hex');
+    previews.set(tok, { sid, port: r.port, exp: Date.now() + 12 * 3600 * 1000 });
+    return send(res, 200, { url: `/preview/${tok}/` });
+  }
   if (p === '/api/interrupt' && M === 'POST') { const b = await readBody(req); await rcc(['interrupt', String(b.sid)]); return send(res, 200, { ok: true }); }
   if (p === '/api/stop' && M === 'POST') { const b = await readBody(req); await rcc(['stop', String(b.sid)]); return send(res, 200, { ok: true }); }
   if (p === '/api/events') return sse(req, res, String(q('sid')), Number(q('from') || 0));
@@ -518,6 +541,7 @@ async function runServer(a) {
         if (r.error) { fail(ip); return send(res, 400, r); }
         return send(res, 200, { ...r, url: cfg().url, server: os.hostname() });
       }
+      if (url.pathname.startsWith('/preview/')) return proxyPreview(req, res, url);
       if (url.pathname === '/api/ping') return send(res, 200, { ok: true, version: VERSION });
       if (url.pathname.startsWith('/api/')) {
         if (limited(ip)) return send(res, 429, { error: '尝试太频繁，5 分钟后再试' });

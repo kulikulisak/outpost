@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api, stream, type Account, type LiveSession } from './api';
-import { buildTranscript, toolDiff, toolTitle, type Item } from '@desktop/transcript';
+import { buildTranscript, changeSummary, humanPerm, previewTarget, toolDiff, toolTitle, type Item } from '@desktop/transcript';
 import { EFFORTS, MODELS, PERMS, prettyModel } from '@desktop/options';
 import { I, Markdown, Sheet, base, short, toast } from './ui';
-import { OptionsSheet, loadOpts, saveOpts, type Open, type RunOpts } from './Lists';
+import { OptionsSheet, isSimple, loadOpts, saveOpts, type Open, type RunOpts } from './Lists';
 import { toAtts, type Att } from './files';
 
 const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -79,7 +79,7 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
   useLayoutEffect(() => { const el = ta.current; if (el) { el.style.height = 'auto'; el.style.height = Math.min(160, el.scrollHeight) + 'px'; } }, [text]);
 
   const startWith = async (o: RunOpts, resume: string | null) => {
-    const r = await api<{ sid: string }>('/api/start', { cwd, model: o.model || undefined, effort: o.effort, permissionMode: o.permissionMode, account: o.account || undefined, resume: resume || undefined, title: title?.slice(0, 40) });
+    const r = await api<{ sid: string }>('/api/start', { cwd, model: o.model || undefined, effort: o.effort, permissionMode: o.permissionMode, account: o.account || undefined, resume: resume || undefined, title: title?.slice(0, 40), simple: isSimple() });
     await new Promise((res) => setTimeout(res, 500));
     return r.sid;
   };
@@ -151,6 +151,7 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
   };
 
   const [menu, setMenu] = useState(false);
+  const simple = isSimple();
   const resolved = prettyModel(t.resolvedModel || meta?.resolvedModel);
   const modelLabel = (resolved && (!opts.model || resolved.toLowerCase().startsWith(opts.model)) ? resolved : opts.model ? MODELS.find((m) => m.id === opts.model)?.label : null) || '默认模型';
   const effortLabel = EFFORTS.find((e) => e.id === opts.effort)?.label || '';
@@ -173,8 +174,10 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
             : <div key={g.items[0]?.key || 'busy'} className="turn">
                 <div className="who"><span className="claude">{I.spark}</span>Claude</div>
                 <div className="tb">
-                  {g.items.map((it) => <Row key={it.key} it={it} answered={answered} onAnswer={answer} accounts={accounts} onSwitchAccount={switchAccount} currentAccount={opts.account || meta?.account} cwd={cwd} />)}
-                  {gi === groups.length - 1 && t.busy && running && <div className="think"><span className="dots"><i /><i /><i /></span>{t.items.length && t.items[t.items.length - 1].kind === 'tool' ? '正在处理' : '思考中'}</div>}
+                  {simple
+                    ? <SimpleTurn items={g.items} live={gi === groups.length - 1 && t.busy && running} row={(it) => <Row key={it.key} it={it} answered={answered} onAnswer={answer} accounts={accounts} onSwitchAccount={switchAccount} currentAccount={opts.account || meta?.account} cwd={cwd} sid={sid} busy={t.busy} />} />
+                    : g.items.map((it) => <Row key={it.key} it={it} answered={answered} onAnswer={answer} accounts={accounts} onSwitchAccount={switchAccount} currentAccount={opts.account || meta?.account} cwd={cwd} sid={sid} busy={t.busy} />)}
+                  {!simple && gi === groups.length - 1 && t.busy && running && <div className="think"><span className="dots"><i /><i /><i /></span>{t.items.length && t.items[t.items.length - 1].kind === 'tool' ? '正在处理' : '思考中'}</div>}
                 </div>
               </div>)}
           {!running && sid && !loading && <div className="note">会话已结束，继续发消息会接着这段对话</div>}
@@ -218,7 +221,76 @@ export function Chat({ open, sessions, accounts, onBack, onSwitch }: {
   );
 }
 
-function Row({ it, answered, onAnswer, accounts, onSwitchAccount, currentAccount, cwd = '' }: {
+/** Simple mode: steps fold into one line; Claude's last words, open questions and what changed stay visible. */
+function SimpleTurn({ items, live, row }: { items: Item[]; live: boolean; row(it: Item): any }) {
+  const [open, setOpen] = useState(false);
+  const final = live ? undefined : [...items].reverse().find((x) => x.kind === 'text');
+  const isStep = (x: Item) => x.kind === 'tool' || x.kind === 'thinking' || (x.kind === 'text' && x !== final) || (x.kind === 'perm' && !!x.outcome);
+  const steps = items.filter(isStep);
+  const rest = items.filter((x) => !isStep(x) && x !== final);
+  const tools = steps.filter((x) => x.kind === 'tool') as Extract<Item, { kind: 'tool' }>[];
+  const cur = live ? [...tools].reverse().find((x) => !x.done) : undefined;
+  const label = live ? (cur ? `正在${stepWord(cur)}` : '正在思考') : `做了 ${tools.length} 步`;
+  return <>
+    {(steps.length > 0 || live) && (
+      <div className="steps">
+        <button className="steps-h" onClick={() => setOpen((o) => !o)}>
+          {live ? <span className="dots"><i /><i /><i /></span> : <span className="ok">✓</span>}<span>{label}</span>
+          {steps.length > 0 && <span className="cv">{open ? '收起' : '查看过程'}</span>}
+        </button>
+        {open && <div className="steps-b">{steps.map(row)}</div>}
+      </div>
+    )}
+    {rest.filter((x) => x.kind === 'perm').map(row)}
+    {final && row(final)}
+    {rest.filter((x) => x.kind !== 'perm').map(row)}
+  </>;
+}
+function stepWord(t: Extract<Item, { kind: 'tool' }>) {
+  switch (t.name) {
+    case 'Read': case 'Grep': case 'Glob': case 'LS': return '查看项目';
+    case 'Write': return '写文件';
+    case 'Edit': case 'MultiEdit': return '修改文件';
+    case 'WebFetch': case 'WebSearch': return '上网查资料';
+    case 'Task': case 'Agent': return '分派子任务';
+    case 'TodoWrite': return '列计划';
+    case 'Bash': return humanPerm('Bash', t.input).text.replace(/^在服务器上/, '');
+    default: return '处理';
+  }
+}
+
+function Changes({ it, sid, busy }: { it: Extract<Item, { kind: 'changes' }>; sid: string | null; busy: boolean }) {
+  const [list, setList] = useState(false);
+  const [doing, setDoing] = useState(false);
+  const page = previewTarget(it.files);
+  if (it.undone) return <div className="changes undone">✓ 这一轮的改动已撤销</div>;
+  const preview = async () => {
+    if (!sid) return toast('会话已结束，发一条消息后再预览');
+    const w = window.open('about:blank', '_blank');
+    try { const r = await api<{ url: string }>('/api/preview', { sid }); const u = r.url + page!.split('/').map(encodeURIComponent).join('/'); if (w) w.location.href = u; else location.href = u; }
+    catch (e: any) { w?.close(); toast(e.message); }
+  };
+  const undo = async () => {
+    if (!sid) return toast('会话已结束，重新打开后再撤销');
+    if (!confirm('撤销这一轮的改动？项目文件会回到这条消息发出之前的样子，之后各轮的改动也一起撤销。撤销前会自动再存一份。')) return;
+    setDoing(true);
+    try { await api('/api/restore', { sid, checkpoint: it.checkpoint }, { timeout: 120000 }); toast('已撤销'); } catch (e: any) { toast(e.message); }
+    setDoing(false);
+  };
+  return (
+    <div className="changes">
+      <button className="ct" onClick={() => setList((l) => !l)}>{changeSummary(it.files, it.total)} <span className="cv">{list ? '⌃' : '⌄'}</span></button>
+      {list && <div className="cl mono">{it.files.map((f) => <div key={f.p}><span className={`fs ${f.s}`}>{f.s === 'A' ? '新建' : f.s === 'D' ? '删除' : '修改'}</span>{f.p}</div>)}</div>}
+      <div className="ca">
+        {page && <button className="y" onClick={preview}>预览</button>}
+        <button disabled={doing || busy} onClick={undo}>{doing ? '正在撤销…' : '撤销这一轮'}</button>
+      </div>
+    </div>
+  );
+}
+
+function Row({ it, answered, onAnswer, accounts, onSwitchAccount, currentAccount, cwd = '', sid = null, busy = false }: {
+  sid?: string | null; busy?: boolean;
   cwd?: string; it: Item; answered: Set<string>; onAnswer(req: string, d: 'allow' | 'deny', extra?: any): void; accounts: Account[]; onSwitchAccount(id: string): void; currentAccount?: string;
 }) {
   const [openTool, setOpenTool] = useState(false);
@@ -229,13 +301,15 @@ function Row({ it, answered, onAnswer, accounts, onSwitchAccount, currentAccount
     case 'text': return <Markdown text={it.text} />;
     case 'thinking': return <details className="thinkbox"><summary>思考过程</summary><div>{it.text}</div></details>;
     case 'note': return <div className={`note ${it.error ? 'err' : ''}`}>{it.text}</div>;
+    case 'changes': return <Changes it={it} sid={sid} busy={busy} />;
     case 'perm': {
       const done = it.outcome || answered.has(it.req);
-      const tt = toolTitle(it.tool, it.input || {});
-      if (done) return <div className={`permdone ${it.outcome === 'deny' ? 'no' : ''}`}>{it.outcome === 'deny' ? '已拒绝' : '已允许'} · {tt.verb} <span className="mono">{rel(tt.target).slice(0, 80)}</span></div>;
+      const hp = humanPerm(it.tool, it.input || {});
+      void rel;
+      if (done) return <div className={`permdone ${it.outcome === 'deny' ? 'no' : ''}`}>{it.outcome === 'deny' ? '已拒绝' : '已允许'} · {hp.text}</div>;
       return (
-        <div className="permcard">
-          <div><b>{done ? (it.outcome === 'deny' ? '已拒绝' : it.outcome === 'allow' ? '已允许' : '已回复') : '需要批准'}</b> · {tt.verb} <span className="mono" style={{ fontSize: 12.5 }}>{tt.target.slice(0, 160)}</span></div>
+        <div className={`permcard ${hp.risk}`}>
+          <div><b>需要你同意</b> · Claude 想要{hp.text}</div>
           {!done && <div className="acts"><button onClick={() => onAnswer(it.req, 'deny')}>拒绝</button><button className="y" onClick={() => onAnswer(it.req, 'allow')}>允许</button></div>}
         </div>
       );
@@ -281,16 +355,18 @@ function PermSheet({ it, title, onClose, onAnswer }: { it: Extract<Item, { kind:
     : it.tool === 'Edit' || it.tool === 'MultiEdit' || it.tool === 'Write' ? (toolDiff(it.tool, input) || []).slice(0, 60).map((d) => `${d.t} ${d.s}`).join('\n')
     : JSON.stringify(input, null, 2).slice(0, 2000);
   const prefix = it.tool === 'Bash' ? String(input.command || '').trim().split(/\s+/).slice(0, 2).join(' ') : '';
-  const verb = it.tool === 'Bash' ? '运行命令' : it.tool === 'Edit' || it.tool === 'MultiEdit' || it.tool === 'Write' ? '修改文件' : `使用 ${it.tool.replace(/^mcp__/, '')}`;
+  const hp = humanPerm(it.tool, input);
+  const [more, setMore] = useState(false);
   return (
     <Sheet onClose={onClose}>
-      <h2>Claude 想{verb}</h2>
-      <div className="sub">{title}{it.tool !== 'Bash' && tt.target ? ` · ${tt.target}` : ''}</div>
-      <div className="cmd mono">{body}</div>
+      <h2>Claude 想要{hp.text}，可以吗？</h2>
+      <div className="sub">{title}</div>
+      {hp.risk === 'high' && <div className="risk">这一步可能删掉东西或改动服务器，不确定就点拒绝。</div>}
+      {more ? <div className="cmd mono">{body}</div> : <button className="more" onClick={() => setMore(true)}>查看具体内容 ⌄</button>}
       {why === null ? (
         <div className="btns">
           <button className="btn pri" onClick={() => { onAnswer(it.req, 'allow'); onClose(); }}>允许一次</button>
-          <button className="btn" onClick={() => { onAnswer(it.req, 'allow', { rule: prefix ? `Bash:${prefix}` : it.tool }); onClose(); }}>本会话都允许{prefix ? ` ${prefix}` : it.tool === 'Bash' ? '' : `「${tt.verb}」`}</button>
+          <button className="btn" onClick={() => { onAnswer(it.req, 'allow', { rule: prefix ? `Bash:${prefix}` : it.tool }); onClose(); }}>这个会话里同类操作都允许</button>
           <button className="btn ghost" onClick={() => setWhy('')}>拒绝并告诉它原因</button>
         </div>
       ) : (

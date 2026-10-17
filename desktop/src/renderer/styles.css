@@ -318,3 +318,22 @@ textarea.input { font-family: var(--mono); font-size: 12px; resize: vertical; }
 .app-toast.err { background: var(--red); color: #fff; }
 .toast-x { color: inherit; opacity: .7; font-size: 16px; line-height: 1; }
 .toast .btn.sm { background: transparent; color: inherit; border-color: color-mix(in srgb, currentColor 40%, transparent); }
+
+/* ---- simple mode ---- */
+.sturn { display: flex; flex-direction: column; gap: 12px; }
+.steps { border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.steps-h { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
+.steps-h .cv { margin-left: auto; color: var(--faint); font-size: 12px; }
+.steps-b { border-top: 1px solid var(--line); padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+.changes { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--card); }
+.changes.undone { color: var(--faint); font-size: 13px; display: flex; gap: 6px; align-items: center; }
+.ch-row { display: flex; align-items: center; gap: 8px; }
+.ch-t { font-size: 13.5px; cursor: pointer; }
+.ch-t .cv { color: var(--faint); }
+.ch-list { margin-top: 8px; font-size: 12.5px; color: var(--muted); font-family: var(--mono); display: flex; flex-direction: column; gap: 3px; max-height: 220px; overflow: auto; }
+.ch-list .fs { display: inline-block; width: 3em; font-family: var(--sans, inherit); color: var(--faint); }
+.ch-list .fs.A { color: var(--addt, #2f9e44); } .ch-list .fs.D { color: var(--delt); }
+.btn.sm { padding: 4px 12px; font-size: 12.5px; min-height: 28px; }
+.perm .more { font-size: 12.5px; color: var(--faint); cursor: pointer; }
+.perm .risk { font-size: 12.5px; color: var(--delt); margin-bottom: 8px; }
+.perm.high { border-color: color-mix(in srgb, var(--delt) 50%, var(--line)); background: var(--del); }

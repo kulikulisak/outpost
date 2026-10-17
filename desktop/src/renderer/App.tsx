@@ -224,7 +224,7 @@ export function App() {
     if (!sid) {
       const resume = t.claudeSessionId || c.claudeId;
       const title = c.title === '新会话' ? (text || files?.[0]?.name || '新会话').replace(/\s+/g, ' ').slice(0, 40) : c.title;
-      const r = await rc.claude.start({ cwd: c.cwd, model: want.model || undefined, effort: want.effort, permissionMode: want.permissionMode, resume, title, mkdir: c.mkdir, account });
+      const r = await rc.claude.start({ cwd: c.cwd, model: want.model || undefined, effort: want.effort, permissionMode: want.permissionMode, resume, title, mkdir: c.mkdir, account, simple: prefs?.simple !== false });
       sid = r.sid;
       const key = `s:${sid}`;
       const moved = { ...convsRef.current[convKey], key, sid, title, cwd: r.cwd, started: want, account };
@@ -282,7 +282,7 @@ export function App() {
   const startWorktree = async (cwd: string, name: string, baseBranch: string) => {
     const want = defaults();
     const account = activeAccountRef.current || undefined;
-    const r = await rc.claude.start({ cwd, worktree: name, base: baseBranch || 'HEAD', title: name, model: want.model || undefined, effort: want.effort, permissionMode: want.permissionMode, account });
+    const r = await rc.claude.start({ cwd, worktree: name, base: baseBranch || 'HEAD', title: name, model: want.model || undefined, effort: want.effort, permissionMode: want.permissionMode, account, simple: prefs?.simple !== false });
     const key = `s:${r.sid}`;
     setConvs((a) => ({ ...a, [key]: { key, cwd: r.cwd, title: name, branch: name, sid: r.sid, events: [], loading: false, ...want, started: { ...want, account }, account } }));
     setActiveKey(key); setView('chat');
@@ -386,7 +386,9 @@ export function App() {
               canSend={!notReady} blockedReason={notReady || undefined}
               model={active.model} effort={active.effort} permissionMode={active.permissionMode} resolved={resolved}
               onModel={(model) => patchActive({ model })} onEffort={(effort) => patchActive({ effort })} onPerm={(permissionMode) => patchActive({ permissionMode })}
-              onSend={send}
+              onSend={send} simple={prefs?.simple !== false}
+              onRestore={async (c) => { if (!active.sid) throw new Error('会话已结束，重新打开后再恢复'); await rc.claude.restore(active.sid, c); }}
+              onPreview={async (pg) => { if (!active.sid) throw new Error('会话已结束，发一条消息后再预览'); await rc.claude.preview(active.sid, pg); }}
               onInterrupt={() => active.sid && rc.claude.interrupt(active.sid).catch(() => {})}
               onAnswer={(req, d) => active.sid && rc.claude.answer(active.sid, req, d).catch(() => {})}
               footer={footer} banner={banner}

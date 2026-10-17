@@ -2,7 +2,8 @@
 // plus rcc's own events into a flat list of things to draw.
 
 export type Item =
-  | { kind: 'user'; key: string; text: string; files?: { name: string; image: boolean }[] }
+  | { kind: 'user'; key: string; text: string; files?: { name: string; image: boolean }[]; checkpoint?: string }
+  | { kind: 'changes'; key: string; checkpoint: string; files: { s: string; p: string }[]; total: number; undone?: boolean }
   | { kind: 'text'; key: string; text: string }
   | { kind: 'thinking'; key: string; text: string }
   | { kind: 'tool'; key: string; id: string; name: string; input: any; result?: string; isError?: boolean; done: boolean }
@@ -50,9 +51,14 @@ export function buildTranscript(events: any[]): Transcript {
       case 'rcc_user': {
         const ut = String(ev.text || '').trim();
         const c = historyUserTexts.get(ut) || 0;
-        if (c > 0) { historyUserTexts.set(ut, c - 1); break; }
+        if (c > 0) {
+          historyUserTexts.set(ut, c - 1);
+          const h = [...t.items].reverse().find((x) => x.kind === 'user' && x.text === ut) as Extract<Item, { kind: 'user' }> | undefined;
+          if (h && ev.checkpoint) h.checkpoint = ev.checkpoint;
+          break;
+        }
         const files = Array.isArray(ev.attachments) ? ev.attachments.map((f: any) => ({ name: String(f.name || ''), image: /^image\//.test(f.mime || '') })) : undefined;
-        t.items.push({ kind: 'user', key: k(), text: ut, files: files?.length ? files : undefined });
+        t.items.push({ kind: 'user', key: k(), text: ut, files: files?.length ? files : undefined, checkpoint: ev.checkpoint || undefined });
         t.busy = true; t.lastError = undefined; limitOpen = false;
         break;
       }
@@ -67,7 +73,7 @@ export function buildTranscript(events: any[]): Transcript {
             }
           }
         }
-        let text = textOf(content).trim();
+        let text = textOf(content).trim().replace(/^（提示：用户刚刚把项目文件恢复到了之前的存档[^）]*）\s*/, '');
         const isResult = Array.isArray(content) && content.some((b: any) => b?.type === 'tool_result');
         const imgs = Array.isArray(content) && !isResult ? content.filter((b: any) => b?.type === 'image').length : 0;
         if ((text || imgs) && !HIDDEN_USER.test(text) && !isResult) {
@@ -134,6 +140,17 @@ export function buildTranscript(events: any[]): Transcript {
         if (t.limit) t.limit = { ...t.limit, switchedTo: ev.to };
         break;
       }
+      case 'rcc_changes':
+        if (ev.checkpoint && Array.isArray(ev.files) && ev.files.length) t.items.push({ kind: 'changes', key: k(), checkpoint: ev.checkpoint, files: ev.files, total: ev.total || ev.files.length });
+        break;
+      case 'rcc_restored': {
+        // every turn from that checkpoint on is undone
+        const at = t.items.findIndex((x) => (x.kind === 'user' || x.kind === 'changes') && x.checkpoint === ev.checkpoint);
+        if (at >= 0) for (const x of t.items.slice(at)) if (x.kind === 'changes') x.undone = true;
+        const u = t.items.find((x) => x.kind === 'user' && x.checkpoint === ev.checkpoint) as Extract<Item, { kind: 'user' }> | undefined;
+        t.items.push({ kind: 'note', key: k(), text: u ? `已恢复到「${u.text.slice(0, 24)}${u.text.length > 24 ? '…' : ''}」之前的样子` : '已恢复到之前的存档' });
+        break;
+      }
       case 'rcc_interrupt':
         t.items.push({ kind: 'note', key: k(), text: '已中断' });
         break;
@@ -181,5 +198,56 @@ export function toolDiff(name: string, input: any): DiffLine[] | null {
     return out;
   }
   if (name === 'Write') return lines(input.content).map((s) => ({ t: '+' as const, s }));
+  return null;
+}
+
+// ---------- plain-language helpers (for people who don't read code) ----------
+const baseName = (p?: string) => (p || '').split('/').pop() || '';
+const FRIENDLY_CMD: [RegExp, string][] = [
+  [/^\s*(sudo\s+)?rm\s/, '删除文件'],
+  [/\b(npm|pnpm|yarn|bun)\s+(i|install|add)\b|\bpip3?\s+install\b|\bapt(-get)?\s+install\b/, '安装需要的软件包'],
+  [/\b(npm|pnpm|yarn|bun)\s+(run\s+)?(dev|start|serve)\b|\bhttp\.server\b|\bvite\b/, '启动预览服务'],
+  [/\b(npm|pnpm|yarn|bun)\s+(run\s+)?build\b/, '打包项目'],
+  [/\b(npm|pnpm|yarn|bun)\s+(run\s+)?test\b|\bpytest\b/, '运行测试'],
+  [/^\s*git\s+(push|commit)/, '保存到 Git'],
+  [/^\s*(curl|wget)\s/, '从网上下载东西'],
+  [/^\s*(mkdir)\s/, '新建文件夹'],
+  [/^\s*(mv|cp)\s/, '移动或复制文件'],
+  [/^\s*(python3?|node)\s/, '运行一个程序'],
+];
+/** One human sentence for a permission prompt, plus how careful the user should be. */
+export function humanPerm(tool: string, input: any): { text: string; risk: 'low' | 'mid' | 'high' } {
+  switch (tool) {
+    case 'Write': return { text: `新建或覆盖文件「${baseName(input?.file_path)}」`, risk: 'low' };
+    case 'Edit': case 'MultiEdit': return { text: `修改文件「${baseName(input?.file_path)}」`, risk: 'low' };
+    case 'NotebookEdit': return { text: `修改笔记本「${baseName(input?.notebook_path)}」`, risk: 'low' };
+    case 'WebFetch': return { text: `打开网页 ${String(input?.url || '').replace(/^https?:\/\//, '').slice(0, 40)}`, risk: 'low' };
+    case 'WebSearch': return { text: `上网搜索「${input?.query || ''}」`, risk: 'low' };
+    case 'Bash': {
+      const cmd = String(input?.command || '');
+      const desc = String(input?.description || '').trim();
+      const hit = FRIENDLY_CMD.find(([re]) => re.test(cmd));
+      const high = /(^|\s|;|&&)(sudo\s+)?rm\s+-[a-z]*r|git\s+push\s+.*(-f|--force)|\bmkfs\b|\bdd\s+if=|>\s*\/dev\/sd|\bshutdown\b|\breboot\b|curl[^|]*\|\s*(ba)?sh/.test(cmd);
+      const mid = /\brm\b|git\s+push|\bsudo\b|\bapt(-get)?\b|\bsystemctl\b|\bdocker\b/.test(cmd);
+      return { text: desc || hit?.[1] || '在服务器上运行一条命令', risk: high ? 'high' : mid ? 'mid' : 'low' };
+    }
+    default: return { text: `使用工具「${tool.replace(/^mcp__/, '')}」`, risk: 'mid' };
+  }
+}
+/** "新建 2 个、修改 1 个文件" */
+export function changeSummary(files: { s: string; p: string }[], total = files.length): string {
+  const n = (s: string) => files.filter((f) => f.s === s).length;
+  const parts = [n('A') && `新建 ${n('A')} 个`, n('M') && `修改 ${n('M')} 个`, n('D') && `删除 ${n('D')} 个`].filter(Boolean) as string[];
+  const more = total > files.length ? `（共 ${total} 个）` : '';
+  return parts.length ? `${parts.join('、')}文件${more}` : `改动了 ${total} 个文件`;
+}
+/** The page to open for a preview, relative to the project folder, or null when nothing previewable changed. */
+export function previewTarget(files: { s: string; p: string }[]): string | null {
+  const live = files.filter((f) => f.s !== 'D');
+  const html = live.filter((f) => /\.html?$/i.test(f.p)).map((f) => f.p);
+  const idx = html.find((p) => /(^|\/)index\.html?$/i.test(p));
+  if (idx) return idx;
+  if (html.length) return html.sort((a, b) => a.split('/').length - b.split('/').length)[0];
+  if (live.some((f) => /\.(css|js|mjs|svg|png|jpe?g|gif|webp)$/i.test(f.p))) return 'index.html';
   return null;
 }

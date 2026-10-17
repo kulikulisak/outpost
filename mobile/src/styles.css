@@ -228,3 +228,24 @@ svg.i { width: 20px; height: 20px; flex: none; }
 .toast { position: fixed; left: 50%; top: calc(var(--st) + 12px); transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 14px; font-size: 14px; z-index: 50; max-width: 88vw; box-shadow: var(--shadow); animation: fade .2s; }
 .banner { margin: 0 18px 10px; padding: 10px 14px; border-radius: 14px; font-size: 13.5px; background: color-mix(in srgb, var(--amber) 10%, transparent); color: var(--text); display: flex; gap: 10px; align-items: center; }
 .banner button { margin-left: auto; color: var(--accent); font-weight: 600; flex: none; }
+
+/* ---- simple mode ---- */
+.steps { border: 1px solid var(--line); border-radius: 14px; background: var(--card); font-size: 13px; }
+.steps-h { display: flex; align-items: center; gap: 8px; padding: 9px 12px; width: 100%; text-align: left; color: var(--muted); }
+.steps-h .ok { color: var(--green, #2f9e44); font-weight: 700; }
+.steps-h .cv { margin-left: auto; color: var(--faint); font-size: 12px; }
+.steps-b { border-top: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.changes { border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 10px 12px; font-size: 13.5px; }
+.changes.undone { color: var(--faint); font-size: 13px; }
+.changes .ct { width: 100%; text-align: left; font-weight: 500; }
+.changes .ct .cv { color: var(--faint); }
+.changes .cl { margin-top: 6px; font-size: 11.5px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow: auto; word-break: break-all; }
+.changes .fs { display: inline-block; width: 2.6em; color: var(--faint); font-family: inherit; }
+.changes .fs.A { color: var(--green, #2f9e44); } .changes .fs.D { color: var(--red, #e5484d); }
+.changes .ca { display: flex; gap: 8px; margin-top: 10px; }
+.changes .ca button { flex: 1; height: 38px; border-radius: 11px; background: var(--chip); font-weight: 600; }
+.changes .ca .y { background: var(--accent); color: #fff; }
+.changes .ca button:disabled { opacity: .5; }
+.permcard.high { border-color: color-mix(in srgb, var(--red, #e5484d) 50%, transparent); background: color-mix(in srgb, var(--red, #e5484d) 7%, transparent); }
+.risk { margin-top: 10px; font-size: 13px; color: var(--red, #e5484d); }
+.more { margin-top: 12px; font-size: 13px; color: var(--faint); }

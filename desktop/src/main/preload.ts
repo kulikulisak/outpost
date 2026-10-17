@@ -35,6 +35,8 @@ const api: RcApi = {
     answer: (sid, r, d, m) => call('claude:answer', sid, r, d, m),
     interrupt: (sid) => call('claude:interrupt', sid),
     stop: (sid) => call('claude:stop', sid),
+    restore: (sid, c) => call('claude:restore', sid, c),
+    preview: (sid, p) => call('claude:preview', sid, p),
   },
   auth: {
     status: (a) => call('auth:status', a),

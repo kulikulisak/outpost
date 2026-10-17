@@ -104,6 +104,7 @@ export interface StartOptions {
   title?: string;
   mkdir?: boolean;
   account?: string;
+  simple?: boolean;
 }
 
 export interface Prefs {
@@ -122,6 +123,7 @@ export interface Prefs {
   relayOnStart?: boolean; // start the LAN relay for the phone when the app connects
   updateUrl: string; // JSON manifest: {"version":"x.y.z","notes":"...","url":"..."}
   lastUpdateCheck?: number;
+  simple: boolean; // plain-language mode for people who don't read code
 }
 
 export interface MobileDevice { id: string; name: string; createdAt: number | string; lastSeen: number; via: string }
@@ -172,6 +174,8 @@ export interface RcApi {
     answer(sid: string, req: string, decision: 'allow' | 'deny', message?: string): Promise<void>;
     interrupt(sid: string): Promise<void>;
     stop(sid: string): Promise<void>;
+    restore(sid: string, checkpoint: string): Promise<void>;
+    preview(sid: string, page?: string): Promise<void>;
   };
   auth: {
     status(account?: string): Promise<AuthStatus>;

@@ -57,6 +57,17 @@ function openWeb(account: string, url?: string) {
   webWin.loadFile(path.join(__dirname, '../renderer/index.html'), { hash: `web=${encodeURIComponent(account)}${url ? `&url=${encodeURIComponent(url)}` : ''}` });
   webWin.on('closed', () => { webWin = null; });
 }
+// project preview: a plain window on the tunnelled preview server; the page can't reach the app
+let previewWin: BrowserWindow | null = null;
+function openPreview(url: string) {
+  if (!previewWin || previewWin.isDestroyed()) {
+    previewWin = new BrowserWindow({ width: 1200, height: 860, minWidth: 360, minHeight: 400, title: '预览', autoHideMenuBar: true, backgroundColor: '#ffffff', webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
+    previewWin.webContents.setWindowOpenHandler(({ url: u }) => { if (/^https?:/.test(u)) shell.openExternal(u); return { action: 'deny' }; });
+    previewWin.on('closed', () => { previewWin = null; });
+  }
+  previewWin.loadURL(url);
+  previewWin.show(); previewWin.focus();
+}
 const desk = new Desk(remote);
 const relay = new Relay(remote);
 remote.onReconnect = () => { desk.reset(); relay.reset(); };
@@ -129,6 +140,8 @@ handle('claude:unsubscribe', (sid: string) => remote.unsubscribe(sid));
 handle('claude:answer', (sid: string, req: string, d: string, m?: string) => remote.answer(sid, req, d, m));
 handle('claude:interrupt', (sid: string) => remote.interrupt(sid));
 handle('claude:stop', (sid: string) => remote.stop(sid));
+handle('claude:restore', (sid: string, c: string) => remote.restore(sid, c));
+handle('claude:preview', async (sid: string, page?: string) => openPreview(await remote.previewUrl(sid, page || '')));
 
 handle('mobile:status', () => remote.mobileStatus());
 handle('mobile:enable', () => remote.mobileEnable());

@@ -112,6 +112,7 @@ export function ProjectsPage({ onOpen, onNew }: { onOpen(o: Open): void; onNew(c
 export interface RunOpts { model: string; effort: string; permissionMode: string; account: string }
 export const loadOpts = (): RunOpts => ({ model: '', effort: 'high', permissionMode: 'default', account: '', ...JSON.parse(localStorage.getItem('rcc.opts') || '{}') });
 export const saveOpts = (o: RunOpts) => localStorage.setItem('rcc.opts', JSON.stringify(o));
+export const isSimple = () => localStorage.getItem('rcc.simple') !== '0';
 export const allowBypass = () => localStorage.getItem('rcc.allowBypass') === '1';
 
 /** Model, effort, permission mode and account: one sheet, used for new tasks and running ones. */
@@ -164,7 +165,7 @@ export function NewTaskSheet({ cwd: initialCwd, accounts, onClose, onStarted }: 
     setBusy(true);
     try {
       saveOpts(opts); localStorage.setItem('rcc.lastCwd', cwd.trim());
-      const r = await api<{ sid: string }>('/api/start', { cwd: cwd.trim(), mkdir: true, model: opts.model || undefined, effort: opts.effort, permissionMode: opts.permissionMode, account: opts.account || undefined, title: text.trim().slice(0, 40) });
+      const r = await api<{ sid: string }>('/api/start', { cwd: cwd.trim(), mkdir: true, model: opts.model || undefined, effort: opts.effort, permissionMode: opts.permissionMode, account: opts.account || undefined, title: text.trim().slice(0, 40), simple: isSimple() });
       await new Promise((res) => setTimeout(res, 600));
       for (let i = 0; i < 10; i++) {
         try { await api('/api/send', { sid: r.sid, text: text.trim() }); break; }

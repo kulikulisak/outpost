@@ -98,7 +98,7 @@ function start(a) {
   const meta = {
     sid, cwd, worktree, title: a.title || null,
     model: a.model || null, effort: a.effort || null,
-    permissionMode: a['permission-mode'] || 'default',
+    permissionMode: a['permission-mode'] || 'default', simple: !!a.simple,
     resume: a.resume || null, claudeSessionId: a.resume || null,
     account: accId(a),
     status: 'starting', createdAt: new Date().toISOString(),
@@ -113,6 +113,13 @@ function start(a) {
 }
 
 // ---------- run (inside tmux) ----------
+const SIMPLE_PROMPT = [
+  '和你对话的用户不会写代码，也看不懂代码。',
+  '每完成一次请求，回复的最后一段用一到三句大白话说明：你做了什么、结果怎么看或怎么用。不要贴代码，不要用技术术语，用用户的语言。',
+  '如果做的是网页或有界面的东西，把入口文件做成项目里的 index.html（或者说清楚是哪个 html 文件），并告诉用户点界面上的「预览」就能看到效果。需要启动开发服务器时，让它监听 127.0.0.1 并在回复里写出端口号。',
+  '遇到需要用户决定的事情，用选择题的方式问，不要问技术细节。',
+].join('\n');
+
 async function run(sid) {
   const m = readMeta(sid);
   const d = dir(sid);
@@ -121,6 +128,7 @@ async function run(sid) {
   if (m.effort) args.push('--effort', m.effort);
   if (m.resume) args.push('--resume', m.resume);
   args.push('--permission-mode', m.permissionMode);
+  if (m.simple) args.push('--append-system-prompt', SIMPLE_PROMPT);
   if (m.permissionMode !== 'bypassPermissions') {
     const mcpCfg = path.join(d, 'mcp.json');
     fs.writeFileSync(mcpCfg, JSON.stringify({ mcpServers: { rcc: { command: process.execPath, args: [SELF, 'mcp', sid] } } }));
@@ -160,6 +168,7 @@ async function run(sid) {
         else if (ev.type === 'rate_limit_event' && ev.rate_limit_info?.status === 'rejected') hitLimit(ev.rate_limit_info.resetsAt, ev.rate_limit_info.rateLimitType);
         else if (ev.type === 'assistant' && ev.error === 'rate_limit') hitLimit(null, null, textOf(ev.message?.content));
         if (ev.type === 'result' && ev.is_error && LIMIT_RE.test(String(ev.result || ''))) hitLimit(null, null, String(ev.result).slice(0, 300));
+        if (ev.type === 'result') { const mm = readMeta(sid); const files = mm.lastCheckpoint ? ckChanges(mm.cwd, mm.lastCheckpoint) : null; if (files) appendEvent(sid, { type: 'rcc_changes', checkpoint: mm.lastCheckpoint, files: files.slice(0, 200), total: files.length }); }
         if (ev.type === 'result') writeMeta(sid, { busy: false, lastResult: { subtype: ev.subtype, isError: !!ev.is_error, text: typeof ev.result === 'string' ? ev.result.slice(0, 500) : undefined, cost: ev.total_cost_usd, modelUsage: ev.modelUsage ? Object.keys(ev.modelUsage) : undefined, at: Date.now() } });
       } catch { /* non-JSON line, kept verbatim */ }
     }
@@ -175,6 +184,91 @@ async function run(sid) {
   child.on('exit', finish);
   child.on('error', (e) => { appendEvent(sid, { type: 'rcc_error', message: e.message }); finish(-1, null); });
   for (const s of ['SIGTERM', 'SIGHUP']) process.on(s, () => child.kill('SIGTERM'));
+}
+
+// ---------- checkpoints (shadow git per project; the user never sees git) ----------
+const CKPT = path.join(ROOT, 'checkpoints');
+const EXCLUDE = ['.git/', 'node_modules/', '.venv/', 'venv/', '__pycache__/', '.next/', '.cache/', '*.log', '.DS_Store'];
+function ckGit(cwd) {
+  const g = path.join(CKPT, crypto.createHash('sha1').update(cwd).digest('hex').slice(0, 16) + '.git');
+  const env = { ...process.env, GIT_DIR: g, GIT_WORK_TREE: cwd, GIT_AUTHOR_NAME: 'outpost', GIT_AUTHOR_EMAIL: 'outpost@local', GIT_COMMITTER_NAME: 'outpost', GIT_COMMITTER_EMAIL: 'outpost@local' };
+  const git = (args, o = {}) => spawnSync('git', ['-c', 'core.autocrlf=false', '-c', 'core.quotepath=off', '-c', 'gc.auto=0', ...args], { cwd, env, encoding: 'utf8', timeout: o.timeout || 30000, maxBuffer: 64 * 1024 * 1024 });
+  if (!fs.existsSync(path.join(g, 'HEAD'))) {
+    fs.mkdirSync(CKPT, { recursive: true });
+    if (spawnSync('git', ['init', '-q', '--bare', g]).status !== 0) return null;
+    fs.mkdirSync(path.join(g, 'info'), { recursive: true });
+    fs.writeFileSync(path.join(g, 'info', 'exclude'), EXCLUDE.join('\n') + '\n');
+    fs.writeFileSync(path.join(g, 'cwd'), cwd);
+  }
+  return git;
+}
+// refuse to snapshot a home dir or something huge: checkpoints are for project folders
+function ckAllowed(cwd) {
+  if (cwd === os.homedir() || cwd === '/' || cwd === '/root') return false;
+  const r = spawnSync('bash', ['-c', `find . -path ./node_modules -prune -o -path ./.git -prune -o -type f -print 2>/dev/null | head -20001 | wc -l`], { cwd, encoding: 'utf8', timeout: 10000 });
+  return Number(r.stdout || 0) <= 20000;
+}
+function ckSnap(cwd, msg) {
+  if (!ckAllowed(cwd)) return null;
+  const git = ckGit(cwd); if (!git) return null;
+  if (git(['add', '-A', '--ignore-errors', '.'], { timeout: 60000 }).status > 1) return null;
+  const c = git(['commit', '-q', '--allow-empty', '--no-verify', '-m', String(msg || 'checkpoint').slice(0, 200)]);
+  if (c.status !== 0) return null;
+  return git(['rev-parse', '--short=12', 'HEAD']).stdout.trim() || null;
+}
+function ckChanges(cwd, from) {
+  if (!from) return null;
+  const git = ckGit(cwd); if (!git) return null;
+  git(['add', '-A', '--ignore-errors', '.'], { timeout: 60000 });
+  const r = git(['diff', '--cached', '--name-status', '--no-renames', from]);
+  if (r.status !== 0) return null;
+  return r.stdout.split('\n').filter(Boolean).map((l) => { const [s, ...p] = l.split('\t'); return { s: s[0], p: p.join('\t') }; });
+}
+function restore(sid, ckpt) {
+  const m = readMeta(sid);
+  if (m.busy) die('Claude 还在工作，先停下来再恢复');
+  if (!/^[0-9a-f]{7,40}$/.test(String(ckpt || ''))) die('bad checkpoint');
+  const git = ckGit(m.cwd); if (!git) die('这个项目没有存档');
+  if (git(['cat-file', '-e', `${ckpt}^{commit}`]).status !== 0) die('找不到这个存档');
+  const backup = ckSnap(m.cwd, `before restore to ${ckpt}`);
+  const r = git(['read-tree', '-u', '--reset', ckpt]);
+  if (r.status !== 0) die(`恢复失败：${(r.stderr || '').trim()}`);
+  writeMeta(sid, { restoreNote: ckpt });
+  appendEvent(sid, { type: 'rcc_restored', checkpoint: ckpt, backup });
+  out({ ok: true, checkpoint: ckpt, backup });
+}
+
+// ---------- preview: serve a session's project folder as a static site (127.0.0.1 only) ----------
+const PREVIEW_PORT = Number(process.env.RCC_PREVIEW_PORT || 7790);
+const PMIME = { '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.md': 'text/plain; charset=utf-8', '.csv': 'text/plain; charset=utf-8', '.woff2': 'font/woff2', '.woff': 'font/woff', '.mp3': 'audio/mpeg', '.mp4': 'video/mp4', '.pdf': 'application/pdf', '.wasm': 'application/wasm' };
+function serveProjectFile(res, root, rel) {
+  rel = decodeURIComponent(rel || '').replace(/^\/+/, '');
+  let file = path.resolve(root, rel);
+  if (file !== root && !file.startsWith(root + path.sep)) { res.writeHead(403); return res.end('forbidden'); }
+  try { if (fs.statSync(file).isDirectory()) file = path.join(file, 'index.html'); } catch { /* 404 below */ }
+  if (!fs.existsSync(file)) { res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end('<p style="font:15px system-ui;padding:24px;color:#666">这个页面还不存在。</p>'); }
+  res.writeHead(200, { 'Content-Type': PMIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store', 'Content-Security-Policy': 'sandbox allow-scripts allow-forms allow-popups allow-modals' });
+  fs.createReadStream(file).pipe(res);
+}
+async function previewServer() {
+  const http = await import('node:http');
+  http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x');
+    const m = u.pathname.match(/^\/s\/([0-9a-f]{6,20})(\/.*)?$/);
+    if (!m) { res.writeHead(404); return res.end(); }
+    let meta; try { meta = JSON.parse(fs.readFileSync(metaPath(m[1]), 'utf8')); } catch { res.writeHead(404); return res.end('no session'); }
+    if (!m[2]) { res.writeHead(302, { Location: `/s/${m[1]}/` }); return res.end(); }
+    serveProjectFile(res, meta.cwd, m[2]);
+  }).listen(PREVIEW_PORT, '127.0.0.1');
+}
+function preview(sid) {
+  readMeta(sid);
+  if (!tcpUp(PREVIEW_PORT)) {
+    spawnSync('tmux', ['kill-session', '-t', 'rcc-preview'], { stdio: 'ignore' });
+    spawnSync('tmux', ['new-session', '-d', '-s', 'rcc-preview', keep(`${shq(process.execPath)} ${shq(SELF)} preview-server`, 'preview')]);
+    if (!waitPort(PREVIEW_PORT, 5000)) die(`预览服务没起来：${logTail('preview')}`);
+  }
+  out({ port: PREVIEW_PORT, base: `/s/${sid}/` });
 }
 
 // ---------- send ----------
@@ -195,13 +289,16 @@ function send(sid, raw, a = {}) {
   }
   let body = text;
   if (notes.length) body = `${text}${text ? '\n\n' : ''}附件（已上传到 VPS）：\n${notes.map((p) => `- ${p}`).join('\n')}`;
+  if (m.restoreNote) { body = `（提示：用户刚刚把项目文件恢复到了之前的存档，上一次之后的修改都已撤销，请以磁盘上的现状为准。）\n\n${body}`; writeMeta(sid, { restoreNote: null }); }
   if (body.trim()) content.push({ type: 'text', text: body });
   const line = JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n';
   const fifo = path.join(dir(sid), 'in.fifo');
   // non-blocking open only proves the runner is attached; write blocking so big messages are not cut off
   try { fs.closeSync(fs.openSync(fifo, fs.constants.O_WRONLY | fs.constants.O_NONBLOCK)); }
   catch (e) { die(e.code === 'ENXIO' ? 'runner not attached to fifo' : e.message); }
-  appendEvent(sid, { type: 'rcc_user', text, attachments: files.map((f) => ({ name: f.name || path.basename(f.path), mime: f.mime || '', path: f.path })) });
+  const checkpoint = m.cwd ? ckSnap(m.cwd, `before: ${text.slice(0, 80)}`) : null;
+  if (checkpoint) writeMeta(sid, { lastCheckpoint: checkpoint });
+  appendEvent(sid, { type: 'rcc_user', text, checkpoint, attachments: files.map((f) => ({ name: f.name || path.basename(f.path), mime: f.mime || '', path: f.path })) });
   const fd = fs.openSync(fifo, fs.constants.O_WRONLY);
   fs.writeSync(fd, line); fs.closeSync(fd);
   out({ ok: true });
@@ -741,6 +838,10 @@ switch (cmd) {
   case 'interrupt': interrupt(sid); break;
   case 'projects': projects(); break;
   case 'history': history(sid); break;
+  case 'restore': restore(sid, rest[0]); break;
+  case 'preview': preview(sid); break;
+  case 'preview-server': await previewServer(); break;
+  case 'checkpoints': { const m = readMeta(sid); const g = ckGit(m.cwd); const r = g ? g(['log', '--format=%h%x09%ct%x09%s', '-n', '50', '--abbrev=12']) : null; out((r?.stdout || '').split('\n').filter(Boolean).map((l) => { const [id, t, ...s] = l.split('\t'); return { id, at: Number(t) * 1000, label: s.join('\t') }; })); break; }
   case 'auth': out(authStatus(accId(a))); break;
   case 'accounts': await accounts(a); break;
   case 'account-add': accountAdd(a); break;

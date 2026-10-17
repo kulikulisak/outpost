@@ -244,6 +244,11 @@ function ModelPage({ prefs, setPrefs, resolved }: Parameters<typeof SettingsPage
   return <>
     <h2>模型与对话</h2>
     <div className="sub">新会话的默认值，每次对话也可以在输入框右下角单独切换。</div>
+    <div className="grp"><h3>显示方式</h3><div className="list">
+      <Row t="省心模式" sub="Claude 用大白话说做了什么，过程步骤收起来；每轮自动存档，可以一键恢复。新会话生效">
+        <button className={`tog ${prefs.simple !== false ? 'on' : ''}`} onClick={() => setPrefs({ simple: prefs.simple === false })} />
+      </Row>
+    </div></div>
     <div className="grp"><h3>默认值</h3><div className="list">
       <Row t="模型" sub="由 Claude Code 解析为最新版本">
         <select className="sel" value={prefs.model} onChange={(e) => setPrefs({ model: e.target.value })}>

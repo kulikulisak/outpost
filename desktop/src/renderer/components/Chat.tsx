@@ -1,9 +1,9 @@
 import type React from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Avatar, Dropdown, I, Markdown, resetText } from './ui';
+import { Avatar, Dropdown, I, Markdown, confirmDialog, resetText } from './ui';
 import type { Account, OutFile } from '../../shared/types';
 import { toOutFiles } from './VncView';
-import { toolDiff, toolTitle, type Item, type Transcript } from '../transcript';
+import { changeSummary, humanPerm, previewTarget, toolDiff, toolTitle, type Item, type Transcript } from '../transcript';
 import { EFFORTS, MODELS, PERMS, effortLabel, modelLabel, permLabel, prettyModel } from '../options';
 
 export interface ChatProps {
@@ -24,6 +24,9 @@ export interface ChatProps {
   banner?: React.ReactNode;
   accounts: Account[];
   onSwitch(accountId: string): void;
+  simple: boolean;
+  onRestore(checkpoint: string): Promise<void>;
+  onPreview(page: string): Promise<void>;
 }
 
 export function Chat(p: ChatProps) {
@@ -60,8 +63,12 @@ export function Chat(p: ChatProps) {
             </div>
           ) : (
             <div className="col">
-              {items.map((it) => <ItemView key={it.key} it={it} onAnswer={p.onAnswer} accounts={p.accounts} onSwitch={p.onSwitch} />)}
-              {busy && <div className="working"><div className="spin" />Claude 正在工作…</div>}
+              {p.simple
+                ? turns(items).map((g, gi, all) => g.user
+                  ? <ItemView key={g.items[0].key} it={g.items[0]} {...p} />
+                  : <SimpleTurn key={g.items[0]?.key || 'busy'} items={g.items} live={gi === all.length - 1 && busy} p={p} />)
+                : items.map((it) => <ItemView key={it.key} it={it} {...p} />)}
+              {busy && (!p.simple || items[items.length - 1]?.kind === 'user') && <div className="working"><div className="spin" />Claude 正在工作…</div>}
             </div>
           )}
       </div>
@@ -70,7 +77,84 @@ export function Chat(p: ChatProps) {
   );
 }
 
-function ItemView({ it, onAnswer, accounts, onSwitch }: { it: Item; onAnswer: ChatProps['onAnswer']; accounts: Account[]; onSwitch(id: string): void }) {
+// a user message, then everything Claude did until the next one
+function turns(items: Item[]) {
+  const out: { user: boolean; items: Item[] }[] = [];
+  for (const it of items) {
+    if (it.kind === 'user' || (it.kind === 'note' && !it.error)) out.push({ user: true, items: [it] });
+    else { const last = out[out.length - 1]; if (last && !last.user) last.items.push(it); else out.push({ user: false, items: [it] }); }
+  }
+  return out;
+}
+
+/** Simple mode: the steps fold into one line; what's left is Claude's last words, open questions and what changed. */
+function SimpleTurn({ items, live, p }: { items: Item[]; live: boolean; p: ChatProps }) {
+  const [open, setOpen] = useState(false);
+  const lastText = [...items].reverse().find((x) => x.kind === 'text');
+  const final = live ? undefined : lastText;
+  const isStep = (x: Item) => x.kind === 'tool' || x.kind === 'thinking' || (x.kind === 'text' && x !== final) || (x.kind === 'perm' && !!x.outcome);
+  const steps = items.filter(isStep);
+  const rest = items.filter((x) => !isStep(x) && x !== final);
+  const tools = steps.filter((x) => x.kind === 'tool');
+  const current = live ? [...tools].reverse().find((x) => x.kind === 'tool' && !x.done) as Extract<Item, { kind: 'tool' }> | undefined : undefined;
+  const label = live ? (current ? `正在${humanStep(current)}` : '正在思考') : `做了 ${tools.length} 步`;
+  return (
+    <div className="sturn">
+      {(steps.length > 0 || live) && (
+        <div className="steps">
+          <div className="steps-h" onClick={() => setOpen(!open)}>
+            {live ? <div className="spin" /> : <span className="badge ok">{I.check(10)}</span>}
+            <span>{label}</span>
+            {steps.length > 0 && <span className="cv">{open ? '收起' : '查看过程'} {open ? '⌃' : '⌄'}</span>}
+          </div>
+          {open && <div className="steps-b">{steps.map((it) => <ItemView key={it.key} it={it} {...p} />)}</div>}
+        </div>
+      )}
+      {rest.filter((x) => x.kind === 'perm').map((it) => <ItemView key={it.key} it={it} {...p} />)}
+      {final && <ItemView it={final} {...p} />}
+      {rest.filter((x) => x.kind !== 'perm').map((it) => <ItemView key={it.key} it={it} {...p} />)}
+    </div>
+  );
+}
+function humanStep(t: Extract<Item, { kind: 'tool' }>): string {
+  switch (t.name) {
+    case 'Read': case 'Grep': case 'Glob': case 'LS': return '查看项目';
+    case 'Write': return '写文件';
+    case 'Edit': case 'MultiEdit': return '修改文件';
+    case 'WebFetch': case 'WebSearch': return '上网查资料';
+    case 'Task': case 'Agent': return '分派子任务';
+    case 'TodoWrite': return '列计划';
+    case 'Bash': return humanPerm('Bash', t.input).text.replace(/^在服务器上/, '');
+    default: return '处理';
+  }
+}
+
+function ChangesCard({ it, p }: { it: Extract<Item, { kind: 'changes' }>; p: ChatProps }) {
+  const [busy, setBusy] = useState<'' | 'undo' | 'preview'>('');
+  const [err, setErr] = useState('');
+  const [list, setList] = useState(false);
+  const page = previewTarget(it.files);
+  const run = async (k: 'undo' | 'preview', f: () => Promise<void>) => { setBusy(k); setErr(''); try { await f(); } catch (e: any) { setErr(e.message); } finally { setBusy(''); } };
+  const undo = async () => {
+    if (!await confirmDialog({ title: '撤销这一轮的改动？', body: '项目文件会回到这条消息发出之前的样子，之后各轮的改动也会一起撤销。撤销前会自动再存一份，不会丢。', ok: '撤销' })) return;
+    run('undo', () => p.onRestore(it.checkpoint));
+  };
+  if (it.undone) return <div className="changes undone">{I.check(12)} 这一轮的改动已撤销</div>;
+  return (
+    <div className="changes">
+      <div className="ch-row">
+        <span className="ch-t" onClick={() => setList(!list)}>{changeSummary(it.files, it.total)} <span className="cv">{list ? '⌃' : '⌄'}</span></span>
+        <div style={{ flex: 1 }} />
+        {page && <button className="btn p sm" disabled={!!busy} onClick={() => run('preview', () => p.onPreview(page))}>{busy === 'preview' ? <div className="spin" /> : '预览'}</button>}
+        <button className="btn sm" disabled={!!busy || p.transcript.busy} onClick={undo}>{busy === 'undo' ? <div className="spin" /> : '撤销这一轮'}</button>
+      </div>
+      {list && <div className="ch-list">{it.files.map((f) => <div key={f.p}><span className={`fs ${f.s}`}>{f.s === 'A' ? '新建' : f.s === 'D' ? '删除' : '修改'}</span>{f.p}</div>)}</div>}
+      {err && <div className="err-text" style={{ marginTop: 6 }}>{err}</div>}
+    </div>
+  );
+}
+
+function ItemView({ it, onAnswer, accounts, onSwitch, ...p }: { it: Item } & ChatProps) {
   switch (it.kind) {
     case 'user': return (
       <div className="user-wrap">
@@ -84,6 +168,7 @@ function ItemView({ it, onAnswer, accounts, onSwitch }: { it: Item; onAnswer: Ch
     case 'perm': return <PermCard it={it} onAnswer={onAnswer} />;
     case 'note': return <div className={`note ${it.error ? 'err' : ''}`}>{it.text}</div>;
     case 'limit': return <LimitCard it={it} accounts={accounts} onSwitch={onSwitch} />;
+    case 'changes': return <ChangesCard it={it} p={{ ...p, onAnswer, accounts, onSwitch } as ChatProps} />;
   }
 }
 
@@ -164,13 +249,16 @@ function ToolCard({ it }: { it: Extract<Item, { kind: 'tool' }> }) {
 }
 
 function PermCard({ it, onAnswer }: { it: Extract<Item, { kind: 'perm' }>; onAnswer: ChatProps['onAnswer'] }) {
-  const { verb, target } = toolTitle(it.tool, it.input || {});
+  void toolTitle;
+  const [more, setMore] = useState(false);
+  const h = humanPerm(it.tool, it.input || {});
   const detail = it.tool === 'Bash' ? it.input?.command : toolDiff(it.tool, it.input || {}) ? null : JSON.stringify(it.input, null, 2);
-  if (it.outcome) return <div className="note">{it.outcome === 'allow' ? '已允许' : '已拒绝'}：{verb} {target}</div>;
+  if (it.outcome) return <div className="note">{it.outcome === 'allow' ? '已允许' : '已拒绝'}：{h.text}</div>;
   return (
-    <div className="perm">
-      <div className="q">Claude 想要{verb}{target ? `：${target.length > 80 ? target.slice(0, 80) + '…' : target}` : ''}</div>
-      {detail && <pre>{detail}</pre>}
+    <div className={`perm ${h.risk}`}>
+      <div className="q">Claude 想要{h.text}，可以吗？</div>
+      {h.risk === 'high' && <div className="risk">这一步可能删掉东西或改动服务器，不确定就点拒绝。</div>}
+      {detail && (more ? <pre>{detail}</pre> : <div className="more" onClick={() => setMore(true)}>查看具体内容 ⌄</div>)}
       <div className="perm-actions">
         <button className="btn p" onClick={() => onAnswer(it.req, 'allow')}>允许</button>
         <button className="btn" onClick={() => onAnswer(it.req, 'deny')}>拒绝</button>
