@@ -381,3 +381,20 @@ textarea.input { font-family: var(--mono); font-size: 12px; resize: vertical; }
 .cmenu .cm-d { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .memo { min-height: 320px; font-family: var(--mono); font-size: 13px; line-height: 1.6; resize: vertical; }
 .pill { font-size: 11px; color: var(--muted); background: var(--chip); border-radius: 10px; padding: 1px 7px; margin-left: 6px; font-weight: 400; }
+
+/* ---- flat look: only the user's message is a bubble; everything else sits on the page ---- */
+.steps { border: none; background: none; }
+.steps-h { padding: 2px 0; }
+.steps-h .cv { margin-left: 8px; }
+.steps-b { border-top: none; border-left: 2px solid var(--line); margin: 6px 0 2px 5px; padding: 2px 0 2px 14px; }
+.tool { border: none; border-radius: 0; background: none; overflow: visible; }
+.tool-out, .tool .diff { border: 1px solid var(--line); border-radius: 8px; margin-top: 4px; }
+.changes { border: none; background: none; padding: 0; font-size: 13px; }
+.changes .ch-row { gap: 14px; color: var(--muted); }
+.changes .ch-t { color: var(--muted); }
+.changes .lk { background: none; border: none; font-size: 13px; font-weight: 600; color: var(--muted); padding: 2px 0; cursor: pointer; }
+.changes .lk:hover { color: var(--text); }
+.changes .lk.y { color: var(--accent); }
+.changes .lk:disabled { opacity: .5; cursor: default; }
+.changes .deck { margin-top: 0; }
+.tool .th { padding: 3px 0; }

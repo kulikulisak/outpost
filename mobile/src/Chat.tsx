@@ -309,13 +309,13 @@ function Changes({ it, sid, busy }: { it: Extract<Item, { kind: 'changes' }>; si
   };
   return (
     <div className="changes">
-      <button className="ct" onClick={() => setList((l) => !l)}>{changeSummary(it.files, it.total)} <span className="cv">{list ? '⌃' : '⌄'}</span></button>
-      <FileCards paths={docFiles(it.files)} cwd={ctxCwd} />
-      {list && <div className="cl mono">{it.files.map((f) => <div key={f.p}><span className={`fs ${f.s}`}>{f.s === 'A' ? '新建' : f.s === 'D' ? '删除' : '修改'}</span>{f.p}</div>)}</div>}
-      <div className="ca">
-        {page && <button className="y" onClick={preview}>预览</button>}
-        <button disabled={doing || busy} onClick={undo}>{doing ? '正在撤销…' : '撤销这一轮'}</button>
+      <div className="crow">
+        <button className="ct" onClick={() => setList((l) => !l)}>{changeSummary(it.files, it.total)} <span className="cv">{list ? '⌃' : '⌄'}</span></button>
+        {page && <button className="lk y" onClick={preview}>预览</button>}
+        <button className="lk" disabled={doing || busy} onClick={undo}>{doing ? '正在撤销…' : '撤销'}</button>
       </div>
+      {list && <div className="cl mono">{it.files.map((f) => <div key={f.p}><span className={`fs ${f.s}`}>{f.s === 'A' ? '新建' : f.s === 'D' ? '删除' : '修改'}</span>{f.p}</div>)}</div>}
+      <FileCards paths={docFiles(it.files)} cwd={ctxCwd} />
     </div>
   );
 }

@@ -150,9 +150,8 @@ function ChangesCard({ it, p }: { it: Extract<Item, { kind: 'changes' }>; p: Cha
     <div className="changes">
       <div className="ch-row">
         <span className="ch-t" onClick={() => setList(!list)}>{changeSummary(it.files, it.total)} <span className="cv">{list ? '⌃' : '⌄'}</span></span>
-        <div style={{ flex: 1 }} />
-        {page && <button className="btn p sm" disabled={!!busy} onClick={() => run('preview', () => p.onPreview(page))}>{busy === 'preview' ? <div className="spin" /> : '预览'}</button>}
-        <button className="btn sm" disabled={!!busy || p.transcript.busy} onClick={undo}>{busy === 'undo' ? <div className="spin" /> : '撤销这一轮'}</button>
+        {page && <button className="lk y" disabled={!!busy} onClick={() => run('preview', () => p.onPreview(page))}>{busy === 'preview' ? <div className="spin" /> : '预览'}</button>}
+        <button className="lk" disabled={!!busy || p.transcript.busy} onClick={undo}>{busy === 'undo' ? <div className="spin" /> : '撤销'}</button>
       </div>
       <FileCards paths={docFiles(it.files)} cwd={p.cwd} />
       {list && <div className="ch-list">{it.files.map((f) => <div key={f.p}><span className={`fs ${f.s}`}>{f.s === 'A' ? '新建' : f.s === 'D' ? '删除' : '修改'}</span>{f.p}</div>)}</div>}
