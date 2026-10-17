@@ -37,21 +37,21 @@ jobs:
           tags: outpost:test
       - name: smoke test
         run: |
-          docker run -d --name t -e OUTPOST_PAIR_CODE=smoke-test-pass outpost:test
-          for i in $(seq 1 30); do docker exec t curl -fsS http://127.0.0.1:8080/api/ping && break; sleep 1; done
-          docker exec t rcc doctor
-          docker exec t sh -c 'node -e "const r=JSON.parse(require(\"child_process\").execSync(\"rcc doctor\"));for(const k of [\"tmux\",\"git\",\"claude\",\"chromium\"])if(!r[k])throw new Error(k);if(!r.xvnc||!r.websockify||!r.windowManager)throw new Error(\"desk\")"'
-          TOKEN=$(docker exec t curl -fsS -X POST -H 'Content-Type: application/json' -d '{"code":"smoke-test-pass","name":"ci"}' http://127.0.0.1:8080/api/pair | jq -r .token)
-          docker exec t curl -fsS -H "Authorization: Bearer $TOKEN" -X POST -H 'Content-Type: application/json' -d '{"argv":["projects"]}' http://127.0.0.1:8080/api/rcc
+          docker run -d --name outpost-test -e OUTPOST_PAIR_CODE=smoke-test-pass outpost:test
+          for i in $(seq 1 30); do docker exec outpost-test curl -fsS http://127.0.0.1:8080/api/ping && break; sleep 1; done
+          docker exec outpost-test rcc doctor
+          docker exec outpost-test sh -c 'node -e "const r=JSON.parse(require(\"child_process\").execSync(\"rcc doctor\"));for(const k of [\"tmux\",\"git\",\"claude\",\"chromium\"])if(!r[k])throw new Error(k);if(!r.xvnc||!r.websockify||!r.windowManager)throw new Error(\"desk\")"'
+          TOKEN=$(docker exec outpost-test curl -fsS -X POST -H 'Content-Type: application/json' -d '{"code":"smoke-test-pass","name":"ci"}' http://127.0.0.1:8080/api/pair | jq -r .token)
+          docker exec outpost-test curl -fsS -H "Authorization: Bearer $TOKEN" -X POST -H 'Content-Type: application/json' -d '{"argv":["projects"]}' http://127.0.0.1:8080/api/rcc
           echo "TOKEN=$TOKEN" >> $GITHUB_ENV
-          docker logs t
+          docker logs outpost-test
       - name: smoke test (VPS browser)
         continue-on-error: true
         run: |
-          docker exec t curl -fsS -H "Authorization: Bearer $TOKEN" -X POST -H 'Content-Type: application/json' -d '{"argv":["desk","--account","default"]}' http://127.0.0.1:8080/api/rcc
+          docker exec outpost-test curl -fsS -H "Authorization: Bearer $TOKEN" -X POST -H 'Content-Type: application/json' -d '{"argv":["desk","--account","default"]}' http://127.0.0.1:8080/api/rcc
           sleep 4
-          docker exec t curl -fsS "http://127.0.0.1:8080/cdp/$TOKEN/default/json/version"
-          docker exec t sh -c 'tail -n 30 /root/.rcc/desktop-*.log 2>/dev/null || true'
+          docker exec outpost-test curl -fsS "http://127.0.0.1:8080/cdp/$TOKEN/default/json/version"
+          docker exec outpost-test sh -c 'tail -n 30 /root/.rcc/desktop-*.log 2>/dev/null || true'
       - name: push
         uses: docker/build-push-action@v6
         with:
