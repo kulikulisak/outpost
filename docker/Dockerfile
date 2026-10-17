@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=UTC
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git tmux nodejs procps tini openssh-client less ripgrep unzip jq python3 \
       tigervnc-standalone-server tigervnc-tools matchbox-window-manager websockify xclip \
-      chromium fonts-dejavu-core qrencode \
+      chromium fonts-dejavu-core qrencode poppler-utils \
  && if [ "$WITH_CJK_FONTS" = "1" ]; then apt-get install -y --no-install-recommends fonts-noto-cjk fonts-noto-color-emoji fontconfig; fi \
  && rm -rf /var/lib/apt/lists/*
 

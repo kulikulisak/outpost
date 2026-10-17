@@ -45,7 +45,9 @@ for await (const line of rl) {
     continue;
   }
   if (text.includes('报告')) {
-    fs.writeFileSync('周报.pdf', '%PDF-1.4\n% mock\n'); fs.writeFileSync('数据.xlsx', 'PK mock'); fs.writeFileSync('封面.png', Buffer.from('89504e470d0a1a0a', 'hex'));
+    const fx = process.env.RCC_MOCK_FIXTURES;
+    if (fx && fs.existsSync(fx)) { for (const f of fs.readdirSync(fx)) fs.copyFileSync(`${fx}/${f}`, f); }
+    else { fs.writeFileSync('周报.pdf', '%PDF-1.4\n% mock\n'); fs.writeFileSync('数据.xlsx', 'PK mock'); fs.writeFileSync('封面.png', Buffer.from('89504e470d0a1a0a', 'hex')); }
     emit({ type: 'assistant', session_id: sessionId, message: { role: 'assistant', model, content: [{ type: 'text', text: '周报做好了：一份 PDF、一张表格和一张封面图。' }] } });
     emit({ type: 'result', subtype: 'success', session_id: sessionId, total_cost_usd: 0.01, modelUsage: { [model]: {} } });
     continue;

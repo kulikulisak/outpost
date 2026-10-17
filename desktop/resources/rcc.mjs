@@ -105,7 +105,7 @@ function start(a) {
   };
   accEnsure(meta.account);
   fs.writeFileSync(metaPath(sid), JSON.stringify(meta, null, 2));
-  const envs = ['HOME', 'PATH', 'RCC_HOME', 'RCC_CLAUDE', 'RCC_PERMISSION_TIMEOUT_MS'].filter((k) => process.env[k] !== undefined).map((k) => `${k}=${shq(process.env[k])}`).join(' ');
+  const envs = ['HOME', 'PATH', 'RCC_HOME', 'RCC_CLAUDE', 'RCC_PERMISSION_TIMEOUT_MS', 'RCC_MOCK_FIXTURES'].filter((k) => process.env[k] !== undefined).map((k) => `${k}=${shq(process.env[k])}`).join(' ');
   const cmd = `env ${envs} ${JSON.stringify(process.execPath)} ${JSON.stringify(SELF)} run ${sid} 2>>${JSON.stringify(path.join(dir(sid), 'runner.log'))}`;
   const r = spawnSync('tmux', ['new-session', '-d', '-s', tmuxName(sid), '-c', cwd, cmd], { encoding: 'utf8' });
   if (r.status !== 0) die(`tmux failed: ${(r.stderr || '').trim()}`);
@@ -961,6 +961,34 @@ function finfo(a) {
   out(list.map((p) => { const fp = fileAllowed(p); try { const s = fp && fs.statSync(fp); return s && s.isFile() ? { path: fp, size: s.size, mtime: s.mtimeMs } : { path: p, missing: true }; } catch { return { path: p, missing: true }; } }));
 }
 
+// small preview picture for a file card: images as they are (or shrunk), PDFs page 1 (needs poppler or ImageMagick)
+function thumb(a) {
+  const fp = fileAllowed(a.path);
+  let st; try { st = fp && fs.statSync(fp); } catch { st = null; }
+  if (!st || !st.isFile()) return out({ thumb: null });
+  const tdir = path.join(ROOT, 'thumbs'); fs.mkdirSync(tdir, { recursive: true });
+  const key = crypto.createHash('sha1').update(`${fp}:${st.mtimeMs}:${st.size}`).digest('hex');
+  const cf = path.join(tdir, key + '.txt');
+  if (fs.existsSync(cf)) return out({ thumb: fs.readFileSync(cf, 'utf8') || null });
+  const ext = path.extname(fp).toLowerCase();
+  const has = (b) => spawnSync('bash', ['-c', `command -v ${b}`], { stdio: 'ignore' }).status === 0;
+  const IMG = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml' };
+  let uri = null;
+  const shrink = (src) => { const o = path.join(tdir, key + '.jpg'); const r = spawnSync(has('magick') ? 'magick' : 'convert', [src + (ext === '.gif' ? '[0]' : ''), '-thumbnail', '480x640>', '-background', 'white', '-flatten', '-quality', '78', o], { timeout: 20000 }); if (r.status === 0 && fs.existsSync(o)) { const d = fs.readFileSync(o); fs.rmSync(o, { force: true }); return `data:image/jpeg;base64,${d.toString('base64')}`; } return null; };
+  if (IMG[ext]) {
+    if (st.size <= 600 * 1024) uri = `data:${IMG[ext]};base64,${fs.readFileSync(fp).toString('base64')}`;
+    else if (has('convert') || has('magick')) uri = shrink(fp);
+  } else if (ext === '.pdf') {
+    if (has('pdftoppm')) {
+      const o = path.join(tdir, key);
+      const r = spawnSync('pdftoppm', ['-jpeg', '-jpegopt', 'quality=78', '-f', '1', '-l', '1', '-scale-to', '640', '-singlefile', fp, o], { timeout: 20000 });
+      if (r.status === 0 && fs.existsSync(o + '.jpg')) { uri = `data:image/jpeg;base64,${fs.readFileSync(o + '.jpg').toString('base64')}`; fs.rmSync(o + '.jpg', { force: true }); }
+    } else if (has('convert') || has('magick')) uri = shrink(fp + '[0]');
+  }
+  fs.writeFileSync(cf, uri || '');
+  out({ thumb: uri });
+}
+
 // ---------- schedules: ~/.rcc/schedules.json, fired by `rcc sched-tick` (rcc serve runs it every minute) ----------
 const SCHED = path.join(ROOT, 'schedules.json');
 const schedLoad = () => { try { return JSON.parse(fs.readFileSync(SCHED, 'utf8')); } catch { return []; } };
@@ -1162,6 +1190,7 @@ switch (cmd) {
   case 'commands': commands(a); break;
   case 'memory': memory(a); break;
   case 'finfo': finfo(a); break;
+  case 'thumb': thumb(a); break;
   case 'sched-list': out(schedLoad().map((s) => ({ ...s, due: schedDue(s) }))); break;
   case 'sched-put': schedPut(); break;
   case 'sched-remove': schedSave(schedLoad().filter((s) => s.id !== sid)); out({ ok: true }); break;

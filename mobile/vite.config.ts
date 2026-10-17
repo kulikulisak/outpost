@@ -7,7 +7,7 @@ export default defineConfig({
   base: '/',
   plugins: [react()],
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
-  resolve: { alias: { '@desktop': path.resolve(__dirname, '../desktop/src/renderer') } },
+  resolve: { alias: { '@desktop': path.resolve(__dirname, '../desktop/src/renderer') }, dedupe: ['react', 'react-dom'] },
   server: { proxy: { '/api': 'http://127.0.0.1:7788', '/vnc': { target: 'ws://127.0.0.1:7788', ws: true } } },
   build: { outDir: 'dist', emptyOutDir: true, target: 'es2022', chunkSizeWarningLimit: 900 },
 });

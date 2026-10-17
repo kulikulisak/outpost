@@ -396,7 +396,7 @@ echo "websockify=$(command -v websockify >/dev/null && echo 1)"`;
   deskDownloads = (account: string) => this.rccJson<DeskDownloads>(['downloads', '--account', account]);
   /** small JSON helpers on the server (link cards, @files, /commands, memory, schedules) */
   async x(argv: string[], stdin?: string) {
-    const ok = ['unfurl', 'files', 'commands', 'memory', 'finfo', 'sched-list', 'sched-put', 'sched-remove', 'sched-run'];
+    const ok = ['thumb', 'unfurl', 'files', 'commands', 'memory', 'finfo', 'sched-list', 'sched-put', 'sched-remove', 'sched-run'];
     if (!ok.includes(argv[0])) throw new Error(`not allowed: ${argv[0]}`);
     return JSON.parse(await this.rcc(argv, stdin, 30000));
   }

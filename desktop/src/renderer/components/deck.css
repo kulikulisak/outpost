@@ -1,0 +1,67 @@
+/* Portrait card fan (shared by desktop and phone) */
+.deck { display: flex; gap: 0; padding: 14px 6px 18px 10px; margin: 4px 0 0; overflow-x: auto; overflow-y: visible; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.deck::-webkit-scrollbar { display: none; }
+.pcard {
+  --w: 148px;
+  position: relative; flex: none; width: var(--w); height: calc(var(--w) * 1.38); margin-right: -10px;
+  display: flex; flex-direction: column; text-align: left; padding: 0; overflow: hidden;
+  border-radius: 16px; background: var(--bg); border: 1px solid var(--line);
+  box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 24px -8px rgba(0,0,0,.22);
+  transform: rotate(var(--r));
+  transform-origin: 50% 90%;
+  transition: transform .38s cubic-bezier(.2,.9,.25,1.25), box-shadow .3s ease, margin .38s cubic-bezier(.2,.9,.25,1.25);
+  animation: pc-in .62s cubic-bezier(.2,.9,.25,1.18) backwards; animation-delay: calc(var(--i) * 75ms);
+  scroll-snap-align: start; cursor: pointer; z-index: 1; color: var(--text);
+}
+.deck.one .pcard { margin-right: 0; }
+.pcard:hover, .pcard:focus-visible { transform: rotate(0deg) translateY(-8px) scale(1.04); z-index: 5; box-shadow: 0 2px 4px rgba(0,0,0,.08), 0 18px 40px -10px rgba(0,0,0,.32); outline: none; }
+.deck:hover .pcard:not(:hover) { margin-right: 4px; }
+.pcard:active { transform: rotate(0deg) translateY(-4px) scale(.98); transition-duration: .12s; }
+@keyframes pc-in {
+  0% { opacity: 0; transform: translateY(26px) rotate(0deg) scale(.92); }
+  60% { opacity: 1; }
+  100% { opacity: 1; transform: rotate(var(--r)); }
+}
+.pc-pic { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden;
+  background: linear-gradient(150deg, color-mix(in srgb, var(--c) 92%, #fff) 0%, var(--c) 60%, color-mix(in srgb, var(--c) 80%, #000) 100%); }
+.pc-pic.has { background: var(--chip); }
+.pc-pic img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+.pc-pic.wide img { object-position: center; }
+.pc-pic .pc-fav { width: 44px; height: 44px; object-fit: contain; border-radius: 10px; background: #fff; padding: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.2); }
+.pc-ext { color: #fff; font-weight: 800; font-size: 22px; letter-spacing: .5px; text-shadow: 0 2px 10px rgba(0,0,0,.18); }
+.pc-shimmer { position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.35) 50%, transparent 70%); background-size: 220% 100%; animation: pc-sh 1.2s linear infinite; }
+@keyframes pc-sh { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+.pc-meta { flex: none; padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 2px; background: var(--bg); border-top: 1px solid var(--line); }
+.pc-badge { display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--muted); text-transform: none; min-width: 0; }
+.pc-badge i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.pc-badge img { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.pc-badge span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-title { font-size: 12.5px; font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+.pc-sub { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* lightbox */
+.deck-lb { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 24px;
+  background: color-mix(in srgb, #000 42%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: lb-in .22s ease both; }
+.deck-lb.out { animation: lb-out .22s ease both; }
+.deck-lb.out .deck-panel { transition: transform .22s ease, opacity .22s ease; transform: scale(.94) rotate(-2deg); opacity: 0; }
+@keyframes lb-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lb-out { from { opacity: 1; } to { opacity: 0; } }
+.deck-panel { display: flex; flex-direction: column; align-items: center; gap: 16px; max-width: 100%; }
+.pcard.big { --w: min(340px, 78vw); animation: none; transform: none; margin: 0; cursor: default; box-shadow: 0 30px 80px -20px rgba(0,0,0,.55); }
+.pcard.big:hover { transform: none; }
+.pcard.big .pc-title { font-size: 15px; -webkit-line-clamp: 3; }
+.pcard.big .pc-sub { font-size: 12.5px; white-space: normal; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.pcard.big .pc-badge { font-size: 12px; }
+.pcard.big .pc-ext { font-size: 40px; }
+.deck-acts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; animation: acts-in .4s .12s cubic-bezier(.2,.9,.25,1.2) both; }
+@keyframes acts-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.deck-acts button { height: 38px; padding: 0 16px; border-radius: 19px; background: rgba(255,255,255,.92); color: #18181b; font-weight: 600; font-size: 13.5px; border: none; box-shadow: 0 4px 14px rgba(0,0,0,.18); cursor: pointer; }
+.deck-acts button.p { background: var(--accent, #d97757); color: #fff; }
+.deck-acts button:disabled { opacity: .6; }
+.deck-note { font-size: 12px; color: rgba(255,255,255,.85); text-align: center; max-width: 340px; }
+.deck-note.err { color: #fecaca; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pcard, .deck-acts, .deck-lb, .pc-shimmer { animation: none !important; }
+  .pcard { transition: none; }
+}

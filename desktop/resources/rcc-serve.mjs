@@ -28,7 +28,7 @@ const MROOT = path.join(ROOT, 'mobile');
 const SESS = path.join(ROOT, 'sessions');
 const RCC = process.env.RCC_BIN || (fs.existsSync(path.join(HERE, 'rcc')) ? path.join(HERE, 'rcc') : path.join(HERE, 'rcc.mjs'));
 const WEB_DIRS = [path.join(MROOT, 'web'), path.join(HERE, 'web')];
-const VERSION = '0.7.0';
+const VERSION = '0.7.1';
 const F = { cfg: path.join(MROOT, 'config.json'), dev: path.join(MROOT, 'devices.json'), pair: path.join(MROOT, 'pair.json'), subs: path.join(MROOT, 'push.json') };
 
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
@@ -448,7 +448,7 @@ function proxyPreview(req, res, url) {
   const pv = m && previews.get(m[1]);
   if (!pv || pv.exp < Date.now()) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('预览链接已过期，回到对话里再点一次「预览」'); }
   if (!m[2]) { res.writeHead(302, { Location: `/preview/${m[1]}/` }); return res.end(); }
-  if (pv.raw) return proxyRaw(req, res, pv, m[2] + url.search, m[1]);
+  if (pv.raw) { lastRaw.set(clientIp(req), { tok: m[1], at: Date.now() }); return proxyRaw(req, res, pv, m[2] + url.search, m[1]); }
   const up = http.request({ host: '127.0.0.1', port: pv.port, path: `/s/${pv.sid}${m[2]}${url.search}`, method: 'GET' }, (r) => { res.writeHead(r.statusCode || 502, r.headers); r.pipe(res); });
   up.on('error', () => { if (!res.headersSent) { res.writeHead(502); } res.end('预览服务没响应'); });
   up.end();
@@ -469,10 +469,15 @@ function proxyRaw(req, res, pv, pathQs, tok) {
   up.on('error', () => { if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end(`127.0.0.1:${pv.port} 上没有服务在运行（可能已经停了），让 Claude 重新启动一下`); });
   req.pipe(up);
 }
-function rawPreviewFor(req) {
+// the preview page runs sandboxed (opaque origin, so it can't read this app's storage); its requests for
+// /assets/… arrive as cross-site with only our origin as Referer. Send those to the preview this client opened last.
+const lastRaw = new Map(); // client ip -> { tok, at }
+function rawPreviewFor(req, ip) {
   const m = String(req.headers.referer || '').match(/\/preview\/([0-9a-f]{24})\//);
-  const pv = m && previews.get(m[1]);
-  return pv && pv.raw && pv.exp > Date.now() ? { pv, tok: m[1] } : null;
+  let tok = m && m[1];
+  if (!tok && req.headers['sec-fetch-site'] === 'cross-site' && (!req.headers.referer || /^https?:\/\/[^/]+\/?$/.test(String(req.headers.referer)))) { const l = lastRaw.get(ip); if (l && Date.now() - l.at < 30 * 60 * 1000) tok = l.tok; }
+  const pv = tok && previews.get(tok);
+  return pv && pv.raw && pv.exp > Date.now() ? { pv, tok } : null;
 }
 
 const failures = new Map(); // ip -> { n, until }
@@ -694,7 +699,7 @@ function pendingPerms(sid) {
 const RCC_ALLOWED = new Set(['doctor', 'auth', 'projects', 'list', 'history', 'start', 'send', 'answer', 'interrupt', 'stop', 'restore', 'checkpoints', 'preview',
   'accounts', 'account-add', 'account-rename', 'account-use', 'account-order', 'account-remove', 'account-clear-limit',
   'login-start', 'login-status', 'login-code', 'login-stop', 'logout', 'browse', 'browser-close', 'desk', 'desk-open', 'desk-stop', 'desk-list', 'downloads', 'upload-dir', 'serve',
-  'unfurl', 'files', 'commands', 'memory', 'finfo', 'sched-list', 'sched-put', 'sched-remove', 'sched-run']);
+  'unfurl', 'files', 'commands', 'memory', 'finfo', 'thumb', 'sched-list', 'sched-put', 'sched-remove', 'sched-run']);
 const SECRET_RE = /(^|\/)(\.ssh|\.gnupg|\.credentials\.json|\.netrc|\.rcc\/mobile|\.aws|\.docker\/config\.json)(\/|$)/;
 // files a paired device may read: anything in the home folder (Claude can read it anyway), never secrets
 function readable(p) {
@@ -783,7 +788,7 @@ async function runServer(a) {
         return send(res, 200, { ...r, url: cfg().url, server: process.env.OUTPOST_NAME || os.hostname() });
       }
       if (url.pathname.startsWith('/preview/')) return proxyPreview(req, res, url);
-      if (!url.pathname.startsWith('/api/')) { const rp = rawPreviewFor(req); if (rp) return proxyRaw(req, res, rp.pv, url.pathname + url.search, rp.tok); }
+      if (!url.pathname.startsWith('/api/')) { const rp = rawPreviewFor(req, ip); if (rp) return proxyRaw(req, res, rp.pv, url.pathname + url.search, rp.tok); }
       if (url.pathname === '/api/passkey/login-options') return send(res, 200, passkeyLoginOptions(req));
       if (url.pathname === '/api/passkey/login' && req.method === 'POST') {
         if (limited(ip)) return send(res, 429, { error: '尝试太频繁，5 分钟后再试' });

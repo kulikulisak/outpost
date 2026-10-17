@@ -12,7 +12,7 @@
     "noEmit": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": [],
-    "paths": { "@desktop/*": ["../desktop/src/renderer/*"] }
+    "paths": { "@desktop/*": ["../desktop/src/renderer/*"], "react": ["./node_modules/@types/react"], "react-dom": ["./node_modules/@types/react-dom"], "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"] }
   },
-  "include": ["src", "../desktop/src/renderer/transcript.ts", "../desktop/src/renderer/options.ts"]
+  "include": ["src", "../desktop/src/renderer/transcript.ts", "../desktop/src/renderer/options.ts", "../desktop/src/renderer/components/Deck.tsx"]
 }

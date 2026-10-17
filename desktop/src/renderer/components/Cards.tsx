@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { rc } from '../api';
-import { I } from './ui';
+import { Deck, type DeckItem } from './Deck';
+import './deck.css';
 import { fileKind, isLocalUrl } from '../transcript';
 
 // ---------- link cards: title, site, icon and picture fetched on the server (this computer never touches the site) ----------
@@ -12,80 +13,54 @@ const unfurl = (url: string) => {
 };
 
 export function LinkCards({ urls, account }: { urls: string[]; account: string }) {
+  const [info, setInfo] = useState<Record<string, Unfurl>>({});
+  useEffect(() => {
+    let on = true;
+    for (const u of urls) if (!isLocalUrl(u)) unfurl(u).then((r) => on && setInfo((x) => ({ ...x, [u]: r })));
+    return () => { on = false; };
+  }, [urls.join(' ')]);
   if (!urls.length) return null;
-  return <div className="lcards">{urls.map((u) => <LinkCard key={u} url={u} account={account} />)}</div>;
+  const items: DeckItem[] = urls.map((url) => {
+    let host = url; try { host = new URL(url).host.replace(/^www\./, ''); } catch { /* keep */ }
+    if (isLocalUrl(url)) {
+      const x = new URL(url); const port = Number(x.port || 80);
+      return { key: url, title: `服务器上的网页`, sub: `端口 ${port}${x.pathname !== '/' ? ' · ' + x.pathname : ''}`, badge: 'localhost', glyph: `:${port}`, color: '#d97757', thumb: null, note: 'Claude 在服务器上启动的预览，只有你能打开',
+        actions: [{ label: '预览', primary: true, run: () => rc.claude.previewPort(port, x.pathname + x.search) }, { label: '复制链接', run: () => navigator.clipboard.writeText(url) }] };
+    }
+    const u = info[url];
+    return { key: url, title: u ? u.title || url.replace(/^https?:\/\//, '') : host, sub: u?.description || url.replace(/^https?:\/\//, ''), badge: u?.site || host, color: hue(host), thumb: u ? u.image || null : undefined, icon: u?.icon, wide: !!u?.image,
+      note: '标题和图片由服务器抓取，你的电脑没有访问这个网站',
+      actions: [{ label: '在本机打开', primary: true, run: () => rc.app.openExternal(url) }, { label: '用服务器浏览器打开', run: () => rc.web.open(account, url) }, { label: '复制链接', run: () => navigator.clipboard.writeText(url) }] };
+  });
+  return <Deck items={items} />;
 }
-
-function LinkCard({ url, account }: { url: string; account: string }) {
-  const local = isLocalUrl(url);
-  const [u, setU] = useState<Unfurl | null>(local ? { url, local: true } : null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  useEffect(() => { if (!local) { let on = true; unfurl(url).then((r) => on && setU(r)); return () => { on = false; }; } }, [url, local]);
-  let host = url; try { const x = new URL(url); host = x.host.replace(/^www\./, ''); } catch { /* keep */ }
-
-  if (local) {
-    const x = new URL(url);
-    const port = Number(x.port || 80);
-    const open = async () => { setBusy(true); setErr(''); try { await rc.claude.previewPort(port, x.pathname + x.search); } catch (e: any) { setErr(e.message); } finally { setBusy(false); } };
-    return (
-      <div className="lcard local">
-        <div className="lc-ic">{I.globe(16)}</div>
-        <div className="lc-b">
-          <div className="lc-t">服务器上的网页 · 端口 {port}</div>
-          <div className="lc-s">{err || 'Claude 在服务器上启动的预览，只有你能打开'}</div>
-        </div>
-        <button className="btn p sm" disabled={busy} onClick={open}>{busy ? <div className="spin" /> : '预览'}</button>
-      </div>
-    );
-  }
-  return (
-    <div className="lcard" title={url}>
-      <div className="lc-main" onClick={() => rc.app.openExternal(url)}>
-        {u?.image && <img className="lc-img" src={u.image} alt="" />}
-        <div className="lc-b">
-          <div className="lc-site">{u?.icon ? <img src={u.icon} alt="" /> : I.globe(12)}<span>{u?.site || host}</span></div>
-          <div className="lc-t">{u ? u.title || url.replace(/^https?:\/\//, '') : <span className="lc-skel" />}</div>
-          {u?.description && <div className="lc-s">{u.description}</div>}
-        </div>
-      </div>
-      <div className="lc-acts">
-        <button className="lc-a" onClick={() => rc.app.openExternal(url)}>在本机打开</button>
-        <button className="lc-a" onClick={() => rc.web.open(account, url)} title="用服务器上的浏览器打开，网站看到的是服务器的环境">用服务器浏览器打开</button>
-        <button className="lc-a" onClick={() => navigator.clipboard.writeText(url)}>复制链接</button>
-      </div>
-    </div>
-  );
-}
+const hue = (s: string) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return `hsl(${h} 45% 52%)`; };
 
 // ---------- file cards: what Claude made (documents, pictures, media) ----------
 const KIND_COLOR: Record<string, string> = { image: '#0ea5e9', pdf: '#e11d48', sheet: '#16a34a', slides: '#f59e0b', doc: '#2563eb', media: '#a855f7', zip: '#71717a', text: '#52525b' };
+const thumbCache = new Map<string, Promise<string | null>>();
+const thumbOf = (abs: string, k: string) => {
+  if (!/^(image|pdf)$/.test(k)) return Promise.resolve(null);
+  if (!thumbCache.has(abs)) thumbCache.set(abs, rc.x(['thumb', '--path', abs]).then((r: any) => r.thumb || null).catch(() => null));
+  return thumbCache.get(abs)!;
+};
 export function FileCards({ paths, cwd }: { paths: string[]; cwd: string }) {
+  const abs = (rel: string) => (rel.startsWith('/') ? rel : `${cwd.replace(/\/+$/, '')}/${rel}`);
+  const [thumbs, setThumbs] = useState<Record<string, string | null>>({});
+  useEffect(() => {
+    let on = true;
+    for (const p of paths) thumbOf(abs(p), fileKind(p).icon).then((t) => on && setThumbs((x) => ({ ...x, [p]: t })));
+    return () => { on = false; };
+  }, [paths.join('\n'), cwd]);
   if (!paths.length) return null;
-  return <div className="fcards">{paths.map((p) => <FileCard key={p} rel={p} cwd={cwd} />)}</div>;
-}
-function FileCard({ rel, cwd }: { rel: string; cwd: string }) {
-  const abs = rel.startsWith('/') ? rel : `${cwd.replace(/\/+$/, '')}/${rel}`;
-  const k = fileKind(rel);
-  const name = rel.split('/').pop() || rel;
-  const [busy, setBusy] = useState<'' | 'open' | 'save'>('');
-  const [msg, setMsg] = useState('');
-  const run = async (b: 'open' | 'save') => {
-    setBusy(b); setMsg('');
-    try { if (b === 'open') await rc.files.open(abs); else { const r = await rc.files.save(abs); if (r) setMsg('已保存'); } }
-    catch (e: any) { setMsg(e.message); } finally { setBusy(''); }
-  };
-  return (
-    <div className="fcard">
-      <div className="fc-ic" style={{ background: KIND_COLOR[k.icon] }}>{(name.split('.').pop() || '').slice(0, 4).toUpperCase()}</div>
-      <div className="fc-b" onClick={() => run('open')}>
-        <div className="fc-n">{name}</div>
-        <div className="fc-s">{msg || `${k.label}${rel.includes('/') ? ` · ${rel.split('/').slice(0, -1).join('/')}` : ''}`}</div>
-      </div>
-      <button className="btn sm" disabled={!!busy} onClick={() => run('open')}>{busy === 'open' ? <div className="spin" /> : '打开'}</button>
-      <button className="icon-btn" title="保存到电脑" disabled={!!busy} onClick={() => run('save')}>{busy === 'save' ? <div className="spin" /> : I.download(15)}</button>
-    </div>
-  );
+  const items: DeckItem[] = paths.map((rel) => {
+    const k = fileKind(rel);
+    const name = rel.split('/').pop() || rel;
+    const dir = rel.includes('/') ? rel.split('/').slice(0, -1).join('/') : '';
+    return { key: rel, title: name, sub: dir || k.label, badge: (name.split('.').pop() || '').toUpperCase(), color: KIND_COLOR[k.icon], thumb: rel in thumbs ? thumbs[rel] : undefined,
+      actions: [{ label: '打开', primary: true, run: () => rc.files.open(abs(rel)) }, { label: '保存到电脑', run: async () => { await rc.files.save(abs(rel)); } }] };
+  });
+  return <Deck items={items} />;
 }
 
 // ---------- composer helpers: / commands and @ files ----------

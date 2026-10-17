@@ -28,7 +28,7 @@ const MROOT = path.join(ROOT, 'mobile');
 const SESS = path.join(ROOT, 'sessions');
 const RCC = process.env.RCC_BIN || (fs.existsSync(path.join(HERE, 'rcc')) ? path.join(HERE, 'rcc') : path.join(HERE, 'rcc.mjs'));
 const WEB_DIRS = [path.join(MROOT, 'web'), path.join(HERE, 'web')];
-const VERSION = '0.7.0';
+const VERSION = '0.7.1';
 const F = { cfg: path.join(MROOT, 'config.json'), dev: path.join(MROOT, 'devices.json'), pair: path.join(MROOT, 'pair.json'), subs: path.join(MROOT, 'push.json') };
 
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
@@ -699,7 +699,7 @@ function pendingPerms(sid) {
 const RCC_ALLOWED = new Set(['doctor', 'auth', 'projects', 'list', 'history', 'start', 'send', 'answer', 'interrupt', 'stop', 'restore', 'checkpoints', 'preview',
   'accounts', 'account-add', 'account-rename', 'account-use', 'account-order', 'account-remove', 'account-clear-limit',
   'login-start', 'login-status', 'login-code', 'login-stop', 'logout', 'browse', 'browser-close', 'desk', 'desk-open', 'desk-stop', 'desk-list', 'downloads', 'upload-dir', 'serve',
-  'unfurl', 'files', 'commands', 'memory', 'finfo', 'sched-list', 'sched-put', 'sched-remove', 'sched-run']);
+  'unfurl', 'files', 'commands', 'memory', 'finfo', 'thumb', 'sched-list', 'sched-put', 'sched-remove', 'sched-run']);
 const SECRET_RE = /(^|\/)(\.ssh|\.gnupg|\.credentials\.json|\.netrc|\.rcc\/mobile|\.aws|\.docker\/config\.json)(\/|$)/;
 // files a paired device may read: anything in the home folder (Claude can read it anyway), never secrets
 function readable(p) {
