@@ -36,6 +36,10 @@ rcc serve tailscale    # 发布私网 HTTPS；手机装 Tailscale 登录同一�
 rcc pair               # 终端显示二维码，手机相机扫一下
 ```
 
+## 用 Docker / Zeabur 安装
+
+不想用 SSH？可以直接部署镜像 `ghcr.io/kulikulisak/outpost:latest`，持久卷挂到 `/root`，端口 8080。部署好后，电脑端和手机端都直接填网址和配对码。详见 [docker/README.md](docker/README.md)。
+
 ## 手机端怎么连
 
 两种入口，可以都配：

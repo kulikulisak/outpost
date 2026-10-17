@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Remote } from './remote';
+import { Remote, WebLink } from './remote';
 import { Desk } from './desk';
 import { Relay } from './relay';
 import QRCode from 'qrcode';
@@ -103,8 +103,11 @@ const handle = (ch: string, fn: (...a: any[]) => any) =>
   });
 
 handle('servers:list', () => servers.list());
-handle('servers:save', (cfg: ServerConfig, secret?: ServerSecret) => {
-  if (secret && (secret.privateKey || secret.password)) secrets.set(cfg.id, secret);
+handle('servers:save', async (cfg: ServerConfig, secret?: ServerSecret) => {
+  if (cfg.kind === 'url' && secret?.pairCode) {
+    const r = await WebLink.pair(cfg.url || '', secret.pairCode, `电脑 · ${os.hostname()}`.slice(0, 40));
+    secrets.set(cfg.id, { token: r.token });
+  } else if (secret && (secret.privateKey || secret.password)) secrets.set(cfg.id, secret);
   return servers.save(cfg);
 });
 handle('servers:remove', (id: string) => { if (remote.state.state !== 'idle' && 'serverId' in remote.state && remote.state.serverId === id) remote.disconnect(); servers.remove(id); });

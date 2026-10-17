@@ -18,6 +18,7 @@ export class Relay {
   reset() { this.upstream = null; } // the SSH connection was re-made; forward again on next request
 
   private async target(): Promise<number> {
+    if (this.remote.web) throw new Error('这台服务器是用网址连接的，手机直接打开同一个网址就行，不需要电脑中转');
     if (!this.upstream) this.upstream = await this.remote.ssh.forward(await this.remote.servePort());
     return this.upstream;
   }

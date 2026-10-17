@@ -648,7 +648,7 @@ function browserFor(id, scale) {
   const profile = accProfile(id);
   const script = path.join(ROOT, `rcc-browser-${id}`);
   const sf = Math.max(1, Math.min(3, Number(scale) || 1));
-  fs.writeFileSync(script, `#!/bin/sh\nexec ${chromeBin()} --no-sandbox --test-type --no-first-run --hide-crash-restore-bubble --disable-session-crashed-bubble --disable-features=Translate,DownloadBubble --no-default-browser-check --password-store=basic --kiosk --force-device-scale-factor=${sf} --remote-debugging-address=127.0.0.1 --remote-debugging-port=${d.cdp} --remote-allow-origins=* --user-data-dir=${shq(profile)} "$@"\n`, { mode: 0o755 });
+  fs.writeFileSync(script, `#!/bin/sh\nexec ${chromeBin()} --no-sandbox --disable-dev-shm-usage --test-type --no-first-run --hide-crash-restore-bubble --disable-session-crashed-bubble --disable-features=Translate,DownloadBubble --no-default-browser-check --password-store=basic --kiosk --force-device-scale-factor=${sf} --remote-debugging-address=127.0.0.1 --remote-debugging-port=${d.cdp} --remote-allow-origins=* --user-data-dir=${shq(profile)} "$@"\n`, { mode: 0o755 });
   // what `claude auth login` calls to open the sign-in page: open it as a tab of this account's browser
   const opener = path.join(ROOT, `rcc-open-${id}`);
   fs.writeFileSync(opener, `#!/bin/sh\nexec ${shq(process.execPath)} ${shq(SELF)} desk-open --account ${shq(id)} --url "$1"\n`, { mode: 0o755 });

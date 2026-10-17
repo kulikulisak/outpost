@@ -64,12 +64,12 @@ function ServerPage({ conn, servers, reloadServers }: Parameters<typeof Settings
   const connectedId = conn.state !== 'idle' ? conn.serverId : null;
   return <>
     <h2>服务器</h2>
-    <div className="sub">通过 SSH 连接，凭据保存在系统钥匙串。</div>
+    <div className="sub">通过 SSH 或网址（Docker / Zeabur）连接，凭据保存在系统钥匙串。</div>
     <div className="grp"><div className="list">
       {servers.map((s) => {
         const mine = connectedId === s.id;
         return (
-          <Row key={s.id} t={s.name} sub={`${s.username}@${s.host} · 端口 ${s.port}`}>
+          <Row key={s.id} t={s.name} sub={s.kind === 'url' ? `网址 · ${s.url}` : `${s.username}@${s.host} · 端口 ${s.port}`}>
             {mine && conn.state === 'connected' && <Status ok>已连接{conn.latencyMs ? ` · ${conn.latencyMs} ms` : ''}</Status>}
             {mine && conn.state === 'connecting' && <Status warn>连接中…</Status>}
             {mine && conn.state === 'error' && <Status>{conn.message}</Status>}

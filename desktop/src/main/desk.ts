@@ -62,7 +62,7 @@ export class Desk {
   }
 
   // ---------- CDP ----------
-  private async base(account: string) { return `http://127.0.0.1:${await this.remote.cdpPort(account)}`; }
+  private async base(account: string) { return (await this.remote.cdpBase(account)).http; }
 
   async pages(account: string): Promise<DeskPage[]> {
     const r = await fetch(`${await this.base(account)}/json`, { signal: AbortSignal.timeout(4000) });
@@ -79,8 +79,7 @@ export class Desk {
     const key = account + '\0' + targetId;
     const have = this.socks.get(key);
     if (have && have.ws.readyState <= 1) { await have.ready; return have; }
-    const port = await this.remote.cdpPort(account);
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/devtools/page/${targetId}`);
+    const ws = new WebSocket(`${(await this.remote.cdpBase(account)).ws}/devtools/page/${targetId}`);
     const s: Sock = { ws, seq: 0, pending: new Map(), ready: Promise.resolve() };
     s.ready = new Promise<void>((res, rej) => {
       ws.addEventListener('open', () => res());
@@ -136,7 +135,7 @@ export class Desk {
     const remotes: string[] = [];
     for (const lp of localPaths) {
       const rp = `${dir}/${Date.now().toString(36)}-${path.basename(lp).replace(/[^\w.\-\u4e00-\u9fff]/g, '_')}`;
-      await this.remote.ssh.putFile(lp, rp);
+      await this.remote.putFile(lp, rp);
       remotes.push(rp);
     }
     const page = await this.active(account);
@@ -153,7 +152,7 @@ export class Desk {
     const name = path.basename(remotePath);
     const r = await dialog.showSaveDialog(win!, { defaultPath: path.join(app.getPath('downloads'), name) });
     if (r.canceled || !r.filePath) return null;
-    await this.remote.ssh.getFile(remotePath, r.filePath);
+    await this.remote.getFile(remotePath, r.filePath);
     return r.filePath;
   }
 

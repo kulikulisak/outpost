@@ -8,12 +8,19 @@ export interface ServerConfig {
   username: string;
   auth: 'key' | 'password';
   workdir: string; // default directory for new projects, e.g. ~/code
+  /** 'url': a Docker / Zeabur install reached through its web address instead of SSH */
+  kind?: 'ssh' | 'url';
+  url?: string;
 }
 
 export interface ServerSecret {
   privateKey?: string;
   passphrase?: string;
   password?: string;
+  /** device token from pairing with a web-address server */
+  token?: string;
+  /** one-time: pairing code typed in the form, exchanged for a token before saving */
+  pairCode?: string;
 }
 
 export type ConnState =

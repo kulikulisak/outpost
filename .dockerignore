@@ -1,0 +1,10 @@
+**/node_modules
+**/dist
+desktop
+mobile
+mockups
+work
+files
+release
+.git
+.hark

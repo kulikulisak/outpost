@@ -28,7 +28,7 @@ const MROOT = path.join(ROOT, 'mobile');
 const SESS = path.join(ROOT, 'sessions');
 const RCC = process.env.RCC_BIN || (fs.existsSync(path.join(HERE, 'rcc')) ? path.join(HERE, 'rcc') : path.join(HERE, 'rcc.mjs'));
 const WEB_DIRS = [path.join(MROOT, 'web'), path.join(HERE, 'web')];
-const VERSION = '0.5.1';
+const VERSION = '0.6.0';
 const F = { cfg: path.join(MROOT, 'config.json'), dev: path.join(MROOT, 'devices.json'), pair: path.join(MROOT, 'pair.json'), subs: path.join(MROOT, 'push.json') };
 
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
@@ -64,24 +64,37 @@ const saveCfg = (patch) => { const c = { ...cfg(), ...patch }; writeJ(F.cfg, c);
 
 // ---------- devices & pairing ----------
 const devices = () => readJ(F.dev, []);
-function newPair() {
+function newPair(ttlMs = 10 * 60 * 1000) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const code = Array.from(crypto.randomBytes(8), (b) => alphabet[b % alphabet.length]).join('');
-  const p = { code, exp: Date.now() + 10 * 60 * 1000, tries: 0 };
+  const p = { code, exp: Date.now() + ttlMs, tries: 0 };
   writeJ(F.pair, p);
   return p;
 }
+// OUTPOST_PAIR_CODE: a fixed pairing password set in the container's environment (Docker / Zeabur).
+// It never expires, so it must be long; wrong guesses still count against the caller's IP.
+function staticPairOk(code) {
+  const want = String(process.env.OUTPOST_PAIR_CODE || '');
+  if (want.length < 8) return false;
+  const a = Buffer.from(sha(String(code || '').trim())), b = Buffer.from(sha(want));
+  return crypto.timingSafeEqual(a, b);
+}
+function issueDevice(name, via) {
+  const token = b64u(crypto.randomBytes(32));
+  const dev = { id: crypto.randomBytes(4).toString('hex'), name: String(name || '手机').slice(0, 40), tokenHash: sha(token), createdAt: Date.now(), lastSeen: Date.now(), via: via || 'direct' };
+  writeJ(F.dev, [...devices(), dev]);
+  devCache.at = 0;
+  return { token, device: { id: dev.id, name: dev.name } };
+}
 function redeemPair(code, name, via) {
+  if (staticPairOk(code)) return issueDevice(name, via);
   const p = readJ(F.pair, null);
   if (!p || Date.now() > p.exp) return { error: '配对码已过期，请重新生成' };
   if (p.tries >= 5) return { error: '尝试次数过多，请重新生成配对码' };
   const given = Buffer.from(String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').padEnd(8, '#').slice(0, 8));
   if (!crypto.timingSafeEqual(given, Buffer.from(p.code))) { p.tries++; writeJ(F.pair, p); return { error: '配对码不对' }; }
   fs.rmSync(F.pair, { force: true });
-  const token = b64u(crypto.randomBytes(32));
-  const dev = { id: crypto.randomBytes(4).toString('hex'), name: String(name || '手机').slice(0, 40), tokenHash: sha(token), createdAt: Date.now(), lastSeen: Date.now(), via: via || 'direct' };
-  writeJ(F.dev, [...devices(), dev]);
-  return { token, device: { id: dev.id, name: dev.name } };
+  return issueDevice(name, via);
 }
 let devCache = { at: 0, list: [] };
 function authDevice(token) {
@@ -345,6 +358,20 @@ function proxyPreview(req, res, url) {
 }
 
 const failures = new Map(); // ip -> { n, until }
+// behind Zeabur / Cloudflare every request comes from the proxy; RCC_TRUST_PROXY=1 reads the real address
+function clientIp(req) {
+  if (process.env.RCC_TRUST_PROXY === '1') {
+    const v = req.headers['cf-connecting-ip'] || String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    if (v) return String(v);
+  }
+  return req.socket.remoteAddress;
+}
+function publicBase(req) {
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '');
+  if (!host || /^(127\.|localhost|\[::1\]|10\.|192\.168\.)/.test(host)) return null;
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() || (req.socket.encrypted ? 'https' : 'http');
+  return `${proto}://${host}`;
+}
 function limited(ip) { const f = failures.get(ip); return f && f.until > Date.now(); }
 function fail(ip) { const f = failures.get(ip) || { n: 0, until: 0 }; f.n++; if (f.n >= 10) { f.until = Date.now() + 5 * 60 * 1000; f.n = 0; } failures.set(ip, f); }
 
@@ -419,6 +446,27 @@ async function api(req, res, url, dev) {
     if (!mine.length) return send(res, 400, { error: '这台手机还没开通知' });
     const st = await Promise.all(mine.map((s) => pushTo(s.sub, { kind: 'test', title: 'Outpost', body: '通知已打通 ✓', tag: 'test' }).catch((e) => String(e.message))));
     return send(res, 200, { ok: true, status: st });
+  }
+  // --- desktop over the web address: the same rcc commands the ssh connection runs ---
+  if (p === '/api/rcc' && M === 'POST') {
+    const b = await readBody(req, 8 * 1024 * 1024);
+    const argv = Array.isArray(b.argv) ? b.argv.map(String) : [];
+    if (!RCC_ALLOWED.has(argv[0]) || (argv[0] === 'serve' && !['status', 'pair', 'devices', 'revoke', 'url'].includes(argv[1]))) return send(res, 403, { error: `不允许的命令：${argv[0] || ''}` });
+    try { return send(res, 200, { stdout: await rcc(argv, b.stdin == null ? '' : String(b.stdin), Math.min(Number(b.timeout) || 60000, 600000)) }); }
+    catch (e) { return send(res, 500, { error: String(e.message || e) }); }
+  }
+  if (p === '/api/file' && M === 'GET') {
+    const fp = insideRoot(q('path'));
+    if (!fp || !fs.existsSync(fp) || !fs.statSync(fp).isFile()) return send(res, 404, { error: '文件不存在' });
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': fs.statSync(fp).size, 'Cache-Control': 'no-store', ...SEC });
+    return fs.createReadStream(fp).pipe(res);
+  }
+  if (p === '/api/file' && M === 'PUT') {
+    const fp = insideRoot(q('path'));
+    if (!fp || !fp.startsWith(path.join(ROOT, 'uploads') + path.sep)) return send(res, 403, { error: '只能上传到 uploads 目录' });
+    fs.mkdirSync(path.dirname(fp), { recursive: true });
+    await new Promise((resolve, reject) => { const w = fs.createWriteStream(fp); req.pipe(w); w.on('finish', resolve); w.on('error', reject); req.on('error', reject); });
+    return send(res, 200, { ok: true, path: fp });
   }
   if (p === '/api/devices') return send(res, 200, devices().map(({ tokenHash, ...d }) => ({ ...d, me: d.id === dev.id })));
   if (p === '/api/devices/revoke' && M === 'POST') { const b = await readBody(req); revoke(String(b.id)); return send(res, 200, { ok: true }); }
@@ -511,10 +559,51 @@ function pendingPerms(sid) {
   return [...c.open.values()];
 }
 
+const RCC_ALLOWED = new Set(['doctor', 'auth', 'projects', 'list', 'history', 'start', 'send', 'answer', 'interrupt', 'stop', 'restore', 'checkpoints', 'preview',
+  'accounts', 'account-add', 'account-rename', 'account-use', 'account-order', 'account-remove', 'account-clear-limit',
+  'login-start', 'login-status', 'login-code', 'login-stop', 'logout', 'browse', 'browser-close', 'desk', 'desk-open', 'desk-stop', 'desk-list', 'downloads', 'upload-dir', 'serve']);
+function insideRoot(p) {
+  if (!p) return null;
+  const fp = path.resolve(String(p));
+  return fp.startsWith(path.resolve(ROOT) + path.sep) ? fp : null;
+}
+
+// Chrome DevTools of an account's VPS browser, for the desktop app over the web address:
+//   /cdp/<device token>/<account>/json...   and   ws(s)://…/cdp/<device token>/<account>/devtools/page/<id>
+function cdpPath(url) {
+  const m = url.pathname.match(/^\/cdp\/([^/]+)\/([\w-]+)(\/.*)$/);
+  return m ? { token: decodeURIComponent(m[1]), account: m[2], rest: m[3] + url.search } : null;
+}
+async function proxyCdpHttp(req, res, url, ip) {
+  const c = cdpPath(url);
+  if (!c || limited(ip) || !authDevice(c.token)) { fail(ip); return send(res, 401, { error: '需要重新配对' }); }
+  if (!/^\/json(\/|$)/.test(c.rest)) return send(res, 404, { error: 'not found' });
+  const base = await cdpBase(c.account);
+  const r = await fetch(base + c.rest, { method: req.method === 'PUT' ? 'PUT' : 'GET', signal: AbortSignal.timeout(8000) });
+  res.writeHead(r.status, { 'Content-Type': r.headers.get('content-type') || 'application/json', 'Cache-Control': 'no-store', ...SEC });
+  res.end(Buffer.from(await r.arrayBuffer()));
+}
+async function upgradeCdp(req, socket, head, url, ip) {
+  const c = cdpPath(url);
+  if (!c || limited(ip) || !authDevice(c.token) || !/^\/devtools\/(page|browser)\/[\w-]+$/.test(c.rest.split('?')[0])) { fail(ip); socket.end('HTTP/1.1 401 Unauthorized\r\n\r\n'); return; }
+  let port; try { port = Number(new URL(await cdpBase(c.account)).port); } catch { socket.end('HTTP/1.1 404 Not Found\r\n\r\n'); return; }
+  const up = net.connect(port, '127.0.0.1', () => {
+    const lines = [`GET ${c.rest} HTTP/1.1`];
+    for (let i = 0; i < req.rawHeaders.length; i += 2) { const k = req.rawHeaders[i]; if (!/^(host|origin)$/i.test(k)) lines.push(`${k}: ${req.rawHeaders[i + 1]}`); }
+    lines.push(`Host: 127.0.0.1:${port}`);
+    up.write(lines.join('\r\n') + '\r\n\r\n');
+    if (head?.length) up.write(head);
+    up.pipe(socket); socket.pipe(up);
+  });
+  const end = () => { up.destroy(); socket.destroy(); };
+  up.on('error', end); socket.on('error', end); up.on('close', end); socket.on('close', end);
+}
+
 // websocket to the VPS screen: authenticate, then hand the raw socket to websockify
 function upgrade(req, socket, head) {
   const url = new URL(req.url, 'http://x');
-  const ip = req.socket.remoteAddress;
+  const ip = clientIp(req);
+  if (url.pathname.startsWith('/cdp/')) return upgradeCdp(req, socket, head, url, ip);
   if (url.pathname !== '/vnc' || limited(ip) || !authDevice(url.searchParams.get('t'))) { if (url.pathname === '/vnc') fail(ip); socket.end('HTTP/1.1 401 Unauthorized\r\n\r\n'); return; }
   const account = String(url.searchParams.get('account') || 'default').replace(/[^\w-]/g, '');
   const up = net.connect(Number(process.env.RCC_NOVNC_PORT || 6099), '127.0.0.1', () => {
@@ -532,10 +621,12 @@ function upgrade(req, socket, head) {
 async function runServer(a) {
   const c = cfg();
   const port = Number(a.port || c.port || 7788);
+  if (port !== c.port) saveCfg({ port });
+  if (process.env.OUTPOST_URL && !c.url) saveCfg({ url: String(process.env.OUTPOST_URL).replace(/\/+$/, '') });
   const host = process.env.RCC_SERVE_HOST || '127.0.0.1';
   const srv = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
-    const ip = req.socket.remoteAddress;
+    const ip = clientIp(req);
     if (process.env.RCC_SERVE_LOG && url.pathname.startsWith('/api/')) { const t0 = Date.now(); res.on('finish', () => process.stdout.write(`${Date.now()} ${req.method} ${url.pathname} ${res.statusCode} ${Date.now() - t0}ms\n`)); process.stdout.write(`> ${Date.now()} ${req.method} ${url.pathname}\n`); }
     try {
       if (url.pathname === '/api/pair' && req.method === 'POST') {
@@ -543,9 +634,13 @@ async function runServer(a) {
         const b = await readBody(req, 4096);
         const r = redeemPair(b.code, b.name, req.headers['x-rcc-via'] === 'relay' ? 'relay' : 'direct');
         if (r.error) { fail(ip); return send(res, 400, r); }
-        return send(res, 200, { ...r, url: cfg().url, server: os.hostname() });
+        // first pairing through a public address (Zeabur, Cloudflare…): remember it for QR codes and links
+        const pb = publicBase(req);
+        if (!cfg().url && pb && req.headers['x-rcc-via'] !== 'relay') saveCfg({ url: pb });
+        return send(res, 200, { ...r, url: cfg().url, server: process.env.OUTPOST_NAME || os.hostname() });
       }
       if (url.pathname.startsWith('/preview/')) return proxyPreview(req, res, url);
+      if (url.pathname.startsWith('/cdp/')) return await proxyCdpHttp(req, res, url, ip);
       if (url.pathname === '/api/ping') return send(res, 200, { ok: true, version: VERSION });
       if (url.pathname.startsWith('/api/')) {
         if (limited(ip)) return send(res, 429, { error: '尝试太频繁，5 分钟后再试' });
@@ -563,7 +658,16 @@ async function runServer(a) {
   // closing them after Node's default 5 s races with a request already on its way and stalls it
   srv.keepAliveTimeout = 120000; srv.headersTimeout = 125000; srv.requestTimeout = 0;
   srv.on('upgrade', upgrade);
-  srv.listen(port, host, () => out({ ok: true, listening: `${host}:${port}` }));
+  srv.listen(port, host, () => {
+    out({ ok: true, listening: `${host}:${port}`, version: VERSION });
+    // containers have no terminal to run `rcc pair` in: print a code in the log while nothing is paired yet
+    if (process.env.OUTPOST_PRINT_PAIR === '1' && !devices().length) {
+      const p = newPair(24 * 3600 * 1000);
+      process.stdout.write(`\n  ==== Outpost 配对码：${p.code.slice(0, 4)} ${p.code.slice(4)}  （24 小时内有效，用一次就失效；重启会换新的）====\n`);
+      if (process.env.OUTPOST_PAIR_CODE) process.stdout.write('  也可以用你在环境变量 OUTPOST_PAIR_CODE 里设置的配对密码。\n');
+      process.stdout.write('\n');
+    }
+  });
   scanOnce(true);
   setInterval(() => { try { scanOnce(false); } catch { /* keep going */ } }, 1000);
 }
@@ -626,7 +730,7 @@ async function startSrv(a) {
   const major = Number(process.versions.node.split('.')[0]);
   const flags = typeof WebSocket === 'undefined' && major >= 20 ? '--experimental-websocket ' : '';
   const log = path.join(MROOT, 'serve.log');
-  const envs = ['HOME', 'PATH', 'RCC_HOME', 'RCC_CLAUDE', 'RCC_NOVNC_PORT', 'RCC_SERVE_HOST', 'RCC_SERVE_LOG'].filter((k) => process.env[k] !== undefined).map((k) => `${k}=${JSON.stringify(process.env[k])}`).join(' ');
+  const envs = ['HOME', 'PATH', 'RCC_HOME', 'RCC_CLAUDE', 'RCC_NOVNC_PORT', 'RCC_SERVE_HOST', 'RCC_SERVE_LOG', 'RCC_TRUST_PROXY', 'OUTPOST_PAIR_CODE'].filter((k) => process.env[k] !== undefined).map((k) => `${k}=${JSON.stringify(process.env[k])}`).join(' ');
   const cmd = `while true; do env ${envs} ${JSON.stringify(process.execPath)} ${flags}${JSON.stringify(SELF)} run --port ${c.port} >>${JSON.stringify(log)} 2>&1; sleep 2; done`;
   const r = spawnSync('tmux', ['new-session', '-d', '-s', 'rcc-serve', cmd], { encoding: 'utf8' });
   if (r.status !== 0) die(`tmux failed: ${(r.stderr || '').trim()}`);
