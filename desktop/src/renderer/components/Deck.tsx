@@ -20,13 +20,13 @@ export interface DeckItem {
 }
 
 // each card leans a different way in space, so the row reads as loose prints, not a grid
-const POSE = [
-  'rotateY(18deg) rotateX(5deg) rotateZ(-2deg)',
-  'rotateY(-14deg) rotateX(4deg) rotateZ(1.5deg)',
-  'rotateY(10deg) rotateX(-3deg) rotateZ(-1deg)',
-  'rotateY(-18deg) rotateX(5deg) rotateZ(2deg)',
-  'rotateY(14deg) rotateX(-2deg) rotateZ(-1.5deg)',
-];
+// cards stand on one shared 3D plane (like prints propped on a desk): a common vanishing point,
+// each turned a little toward the middle, no flat in-plane twist
+const pose = (i: number, n: number) => {
+  if (n === 1) return 'rotateX(10deg) rotateY(-24deg)';
+  const t = i / (n - 1) - 0.5;                          // -0.5 … 0.5
+  return `rotateX(10deg) rotateY(${(-22 - t * 16).toFixed(1)}deg) translateZ(${(-i * 6)}px)`;
+};
 
 export function Deck({ items }: { items: DeckItem[] }) {
   const [open, setOpen] = useState<{ i: number; from: DOMRect } | null>(null);
@@ -38,7 +38,7 @@ export function Deck({ items }: { items: DeckItem[] }) {
           <button
             key={it.key}
             className="pslot"
-            style={{ ['--i' as any]: i, ['--pose' as any]: items.length === 1 ? 'rotateY(14deg) rotateX(4deg) rotateZ(-1.5deg)' : POSE[i % POSE.length] }}
+            style={{ ['--i' as any]: i, ['--pose' as any]: pose(i, Math.min(items.length, 5)) }}
             onClick={(e) => setOpen({ i, from: ((e.currentTarget as HTMLElement).querySelector('.pcard') as HTMLElement).getBoundingClientRect() })}
             title={it.title}
           >
@@ -91,7 +91,7 @@ function Viewer({ items, start, from, onClose }: { items: DeckItem[]; start: num
       const dx = from.left + from.width / 2 - (to.left + to.width / 2);
       const dy = from.top + from.height / 2 - (to.top + to.height / 2);
       el.animate([
-        { transform: `translate(${dx}px, ${dy}px) scale(${from.width / to.width}) rotateY(16deg) rotateX(5deg)`, opacity: 0.6 },
+        { transform: `translate(${dx}px, ${dy}px) scale(${from.width / to.width}) rotateX(7deg) rotateY(-18deg)`, opacity: 0.6 },
         { transform: 'none', opacity: 1 },
       ], { duration: 520, easing: 'cubic-bezier(.22,1,.36,1)' });
     }
@@ -146,7 +146,7 @@ function Viewer({ items, start, from, onClose }: { items: DeckItem[]; start: num
               ref={i === start ? first : undefined}
               className={`dv-card ${x.wide && x.thumb ? 'wide' : ''} ${d === 0 ? 'on' : ''}`}
               style={{
-                transform: `translateX(calc(-50% + ${d * 68}%)) translateY(-50%) translateZ(${-a * 240}px) rotateY(${-Math.sign(d) * Math.min(a, 2) * 26}deg)`,
+                transform: `translateX(calc(-50% + ${d * 68}%)) translateY(-50%) translateZ(${-a * 240}px) rotateY(${-Math.sign(d) * Math.min(a, 2) * 38}deg)`,
                 filter: d ? `blur(${Math.min(a, 2) * 4}px) brightness(.8)` : 'none',
                 opacity: a > 2 ? 0 : d ? 0.6 : 1,
                 zIndex: 10 - a,

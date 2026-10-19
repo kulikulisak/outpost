@@ -1,22 +1,25 @@
 /* Cards floating in 3D (shared by desktop and phone) */
-.deck { display: flex; gap: 14px; padding: 14px 8px 8px 6px; overflow-x: auto; overflow-y: visible; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.deck { display: flex; gap: 10px; padding: 22px 16px 12px 20px; perspective: 700px; perspective-origin: 40% 20%; transform-style: preserve-3d; overflow-x: auto; overflow-y: visible; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .deck::-webkit-scrollbar { display: none; }
 
-.pslot { flex: none; width: 140px; display: flex; flex-direction: column; gap: 9px; text-align: left; perspective: 900px; scroll-snap-align: start; cursor: pointer;
+.pslot { flex: none; width: 140px; display: flex; flex-direction: column; gap: 9px; text-align: left; transform-style: preserve-3d; scroll-snap-align: start; cursor: pointer;
   animation: pc-in .7s cubic-bezier(.22,1,.36,1) backwards; animation-delay: calc(var(--i) * 80ms); }
 .pslot:focus-visible { outline: none; }
 
 .pcard {
-  position: relative; width: 100%; aspect-ratio: 4 / 5; border-radius: 18px; overflow: hidden;
-  background: var(--bg); transform: var(--pose); transform-style: preserve-3d; transform-origin: 50% 60%;
-  box-shadow: 0 0 0 .5px color-mix(in srgb, var(--text) 9%, transparent), 0 2px 4px rgba(0,0,0,.04), 0 18px 34px -14px rgba(0,0,0,.32);
-  transition: transform .6s cubic-bezier(.22,1,.36,1), box-shadow .6s cubic-bezier(.22,1,.36,1);
+  position: relative; width: 100%; aspect-ratio: 4 / 5; border-radius: 16px; overflow: hidden; isolation: isolate;
+  background: var(--bg); transform: var(--pose); transform-origin: 50% 70%; backface-visibility: hidden; will-change: transform;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.55),
+    0 0 0 .5px color-mix(in srgb, var(--text) 12%, transparent),
+    0 1px 1px rgba(0,0,0,.06), 0 6px 12px -6px rgba(0,0,0,.14), 0 22px 40px -18px rgba(20,24,40,.38);
+  transition: transform .7s cubic-bezier(.22,1,.36,1), box-shadow .7s cubic-bezier(.22,1,.36,1);
 }
 .pcard.wide { aspect-ratio: 4 / 5; }
-.pcard::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-  background: linear-gradient(135deg, rgba(255,255,255,.28), rgba(255,255,255,0) 38%); mix-blend-mode: soft-light; }
-.pslot:hover .pcard, .pslot:focus-visible .pcard { transform: rotateY(0) rotateX(0) rotateZ(0) translateY(-6px) scale(1.03);
-  box-shadow: 0 0 0 .5px color-mix(in srgb, var(--text) 9%, transparent), 0 4px 8px rgba(0,0,0,.05), 0 28px 48px -18px rgba(0,0,0,.4); }
+.pcard::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 2;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); background: linear-gradient(160deg, rgba(255,255,255,.22), rgba(255,255,255,0) 30%, rgba(0,0,0,0) 70%, rgba(0,0,0,.05)); }
+.pslot:hover .pcard, .pslot:focus-visible .pcard { transform: rotateX(0) rotateY(0) translateZ(24px) translateY(-4px);
+  box-shadow: 0 0 0 .5px color-mix(in srgb, var(--text) 9%, transparent), 0 4px 8px rgba(0,0,0,.05), 0 32px 56px -20px rgba(20,24,40,.45); }
 .pslot:active .pcard { transform: translateY(-2px) scale(.98); transition-duration: .18s; }
 @keyframes pc-in { from { opacity: 0; transform: translateY(18px) scale(.94); } }
 
@@ -62,10 +65,10 @@
 .dv-acts button.p { background: var(--accent, #d97757); color: #fff; }
 .dv-acts button:disabled { opacity: .6; }
 
-.dv-stage { position: absolute; inset: 0; perspective: 1400px; perspective-origin: 50% 50%; overflow: hidden; }
-.dv-card { --h: min(66vh, 640px); position: absolute; left: 50%; top: 52%; height: var(--h); width: auto; max-width: 86vw; aspect-ratio: var(--ar, .8);
+.dv-stage { position: absolute; inset: 0; perspective: 1100px; perspective-origin: 50% 50%; overflow: hidden; }
+.dv-card { --h: min(66vh, 640px); backface-visibility: hidden; position: absolute; left: 50%; top: 52%; height: var(--h); width: auto; max-width: 86vw; aspect-ratio: var(--ar, .8);
   border-radius: 26px; overflow: hidden; background: #fff; cursor: pointer;
-  box-shadow: 0 0 0 .5px rgba(255,255,255,.12), 0 40px 90px -30px rgba(0,0,0,.7);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.5), 0 0 0 .5px rgba(255,255,255,.14), 0 12px 24px -10px rgba(0,0,0,.35), 0 50px 100px -30px rgba(0,0,0,.75);
   transition: transform .6s cubic-bezier(.22,1,.36,1), filter .6s ease, opacity .6s ease; will-change: transform; }
 .dv-card.wide { --h: min(48vh, 460px); --ar: 1.6; }
 .dv-card.on { cursor: default; }
