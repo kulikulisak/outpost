@@ -27,20 +27,27 @@ const POSES = [
   'rotateX(18deg) rotateY(14deg) rotateZ(-2deg)',
   'rotateX(10deg) rotateY(-22deg) rotateZ(3deg)',
 ];
-const pose = (i: number, n: number) => n === 1 ? 'rotateX(14deg) rotateY(-16deg) rotateZ(3deg)' : POSES[i % POSES.length];
-const lift = (i: number) => i + 1;
+const pose = (i: number, n: number) => {
+  if (n === 1) return 'none';
+  // two: one up-left leaning back, one down-right turned toward it, in front
+  if (n === 2) return ['rotateX(18deg) rotateY(10deg) rotateZ(-3deg)', 'rotateX(10deg) rotateY(-24deg) rotateZ(2deg)'][i];
+  // three: the middle one raised and in front, the sides lower and behind, turned in toward the middle
+  if (n === 3) return ['rotateX(8deg) rotateY(26deg) rotateZ(-2deg)', 'rotateX(12deg) rotateY(-8deg) rotateZ(1deg)', 'rotateX(8deg) rotateY(-26deg) rotateZ(2deg)'][i];
+  return POSES[i % POSES.length];
+};
+const lift = (i: number, n: number) => n === 3 ? [1, 3, 2][i] : i + 1;
 
 export function Deck({ items }: { items: DeckItem[] }) {
   const [open, setOpen] = useState<{ i: number; from: DOMRect } | null>(null);
   if (!items.length) return null;
   return (
     <>
-      <div className={`deck ${items.length === 1 ? 'one' : ''}`}>
+      <div className={`deck n${Math.min(items.length, 4)} ${items.length === 1 ? 'one' : ''}`}>
         {items.map((it, i) => (
           <button
             key={it.key}
             className="pslot"
-            style={{ ['--i' as any]: i, ['--pose' as any]: pose(i, items.length), zIndex: lift(i) }}
+            style={{ ['--i' as any]: i, ['--pose' as any]: pose(i, items.length), zIndex: lift(i, items.length) }}
             onClick={(e) => setOpen({ i, from: ((e.currentTarget as HTMLElement).querySelector('.pcard') as HTMLElement).getBoundingClientRect() })}
             title={it.title}
           >

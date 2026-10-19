@@ -44,6 +44,25 @@
 .pc-shimmer { position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--bg) 70%, transparent) 50%, transparent 70%); background-size: 220% 100%; animation: pc-sh 1.4s linear infinite; }
 @keyframes pc-sh { from { background-position: 120% 0; } to { background-position: -120% 0; } }
 
+/* layouts by count: one lies flat; two step down to the right; three raise the middle */
+.deck.n1 .pslot { width: 280px; }
+.deck.n1 .pcard { transform: none; }
+.deck.n2 .pslot { width: 236px; }
+.deck.n2 .pslot + .pslot { margin-left: -52px; margin-top: 64px; }
+.deck.n3 .pslot { width: 210px; }
+.deck.n3 .pslot:nth-child(1), .deck.n3 .pslot:nth-child(3) { margin-top: 58px; }
+.deck.n3 .pslot:nth-child(2) { margin-top: 0; }
+.deck.n3 .pslot + .pslot { margin-left: -60px; }
+@media (max-width: 560px) {
+  .deck.n1 .pslot { width: 240px; }
+  .deck.n2, .deck.n3 { padding-left: 18px; padding-right: 14px; }
+  .deck.n2 .pslot { width: 184px; }
+  .deck.n2 .pslot + .pslot { margin-left: -46px; margin-top: 52px; }
+  .deck.n3 .pslot { width: 150px; }
+  .deck.n3 .pslot + .pslot { margin-left: -54px; }
+  .deck.n3 .pslot:nth-child(1), .deck.n3 .pslot:nth-child(3) { margin-top: 44px; }
+}
+
 /* ---------- viewer: dark stage, 3D carousel ---------- */
 .dv { position: fixed; inset: 0; z-index: 200; color: #fff; touch-action: pan-y; user-select: none;
   background: radial-gradient(90% 70% at 50% 35%, rgba(50,56,90,.97), rgba(13,15,24,.99));
