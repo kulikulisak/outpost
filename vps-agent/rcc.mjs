@@ -961,7 +961,7 @@ function finfo(a) {
   out(list.map((p) => { const fp = fileAllowed(p); try { const s = fp && fs.statSync(fp); return s && s.isFile() ? { path: fp, size: s.size, mtime: s.mtimeMs } : { path: p, missing: true }; } catch { return { path: p, missing: true }; } }));
 }
 
-// small preview picture for a file card: images as they are (or shrunk), PDFs page 1 (needs poppler or ImageMagick)
+// small preview picture for a file card: images as they are (or shrunk), PDFs and Word documents page 1 (poppler; LibreOffice for Word)
 function thumb(a) {
   const fp = fileAllowed(a.path);
   let st; try { st = fp && fs.statSync(fp); } catch { st = null; }
@@ -974,16 +974,32 @@ function thumb(a) {
   const has = (b) => spawnSync('bash', ['-c', `command -v ${b}`], { stdio: 'ignore' }).status === 0;
   const IMG = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml' };
   let uri = null;
+  const pdfPage1 = (src) => {
+    if (has('pdftoppm')) {
+      const o = path.join(tdir, key);
+      const r = spawnSync('pdftoppm', ['-jpeg', '-jpegopt', 'quality=78', '-f', '1', '-l', '1', '-scale-to', '640', '-singlefile', src, o], { timeout: 20000 });
+      if (r.status === 0 && fs.existsSync(o + '.jpg')) { const d = fs.readFileSync(o + '.jpg'); fs.rmSync(o + '.jpg', { force: true }); return `data:image/jpeg;base64,${d.toString('base64')}`; }
+      return null;
+    }
+    return (has('convert') || has('magick')) ? shrink(src + '[0]') : null;
+  };
   const shrink = (src) => { const o = path.join(tdir, key + '.jpg'); const r = spawnSync(has('magick') ? 'magick' : 'convert', [src + (ext === '.gif' ? '[0]' : ''), '-thumbnail', '480x640>', '-background', 'white', '-flatten', '-quality', '78', o], { timeout: 20000 }); if (r.status === 0 && fs.existsSync(o)) { const d = fs.readFileSync(o); fs.rmSync(o, { force: true }); return `data:image/jpeg;base64,${d.toString('base64')}`; } return null; };
   if (IMG[ext]) {
     if (st.size <= 600 * 1024) uri = `data:${IMG[ext]};base64,${fs.readFileSync(fp).toString('base64')}`;
     else if (has('convert') || has('magick')) uri = shrink(fp);
   } else if (ext === '.pdf') {
-    if (has('pdftoppm')) {
-      const o = path.join(tdir, key);
-      const r = spawnSync('pdftoppm', ['-jpeg', '-jpegopt', 'quality=78', '-f', '1', '-l', '1', '-scale-to', '640', '-singlefile', fp, o], { timeout: 20000 });
-      if (r.status === 0 && fs.existsSync(o + '.jpg')) { uri = `data:image/jpeg;base64,${fs.readFileSync(o + '.jpg').toString('base64')}`; fs.rmSync(o + '.jpg', { force: true }); }
-    } else if (has('convert') || has('magick')) uri = shrink(fp + '[0]');
+    uri = pdfPage1(fp);
+  } else if (['.doc', '.docx', '.odt', '.rtf'].includes(ext)) {
+    // Word: page 1 via LibreOffice (headless, own profile so it never clashes with a running one)
+    const soffice = ['soffice', 'libreoffice'].find(has);
+    if (soffice) {
+      const od = fs.mkdtempSync(path.join(os.tmpdir(), 'rcc-doc-'));
+      try {
+        spawnSync(soffice, [`-env:UserInstallation=file://${path.join(ROOT, 'lo-profile')}`, '--headless', '--convert-to', 'pdf', '--outdir', od, fp], { timeout: 60000, stdio: 'ignore' });
+        const pdf = fs.readdirSync(od).find((f) => f.endsWith('.pdf'));
+        if (pdf) uri = pdfPage1(path.join(od, pdf));
+      } finally { fs.rmSync(od, { recursive: true, force: true }); }
+    }
   }
   fs.writeFileSync(cf, uri || '');
   out({ thumb: uri });

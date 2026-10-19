@@ -44,6 +44,13 @@ for await (const line of rl) {
     emit({ type: 'result', subtype: 'success', session_id: sessionId, total_cost_usd: 0.01, modelUsage: { [model]: {} } });
     continue;
   }
+  if (text.includes('样板')) {
+    const fx = process.env.RCC_MOCK_FIXTURES;
+    if (fx) for (const f of ['周报.pdf', '方案.docx', '封面.png']) if (fs.existsSync(`${fx}/${f}`)) fs.copyFileSync(`${fx}/${f}`, f);
+    emit({ type: 'assistant', session_id: sessionId, message: { role: 'assistant', model, content: [{ type: 'text', text: '都准备好了。代码仓库在 https://github.com/anthropics/claude-code ，官方介绍在 https://www.anthropic.com/claude-code 。另外写了周报 PDF、项目方案 Word 和一张封面图。' }] } });
+    emit({ type: 'result', subtype: 'success', session_id: sessionId, total_cost_usd: 0.01, modelUsage: { [model]: {} } });
+    continue;
+  }
   const pm = text.match(/(一|两|三|多)张图/);
   if (pm && process.env.RCC_MOCK_PICS) {
     const all = fs.readdirSync(process.env.RCC_MOCK_PICS).sort();

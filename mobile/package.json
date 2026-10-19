@@ -1,7 +1,7 @@
 {
   "name": "outpost-mobile",
   "private": true,
-  "version": "0.7.9",
+  "version": "0.7.10",
   "type": "module",
   "description": "Phone app (PWA) for Claude Code on your VPS, served by rcc serve",
   "scripts": {

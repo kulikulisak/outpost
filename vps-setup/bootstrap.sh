@@ -61,18 +61,20 @@ declare -A DETECT=(
   [fonts]="fc-list 2>/dev/null | grep -qi -e noto -e cjk"
   [qrencode]="command -v qrencode"
   [poppler]="command -v pdftoppm"
+  [office]="command -v soffice"
 )
 declare -A PKG_apt=( [git]="git" [node]="nodejs" [xclip]="xclip" [curl]="curl" [tmux]="tmux" [xvnc]="tigervnc-standalone-server tigervnc-tools" [wm]="matchbox-window-manager"
-  [websockify]="websockify" [chromium]="chromium" [fonts]="fonts-noto-cjk fonts-noto-color-emoji fontconfig" [qrencode]="qrencode" [poppler]="poppler-utils" )
+  [websockify]="websockify" [chromium]="chromium" [fonts]="fonts-noto-cjk fonts-noto-color-emoji fontconfig" [qrencode]="qrencode" [poppler]="poppler-utils" [office]="libreoffice-writer-nogui" )
 declare -A PKG_dnf=( [git]="git" [node]="nodejs" [xclip]="xclip" [curl]="curl" [tmux]="tmux" [xvnc]="tigervnc-server" [wm]="matchbox-window-manager"
-  [websockify]="python3-websockify" [chromium]="chromium" [fonts]="google-noto-sans-cjk-fonts fontconfig" [qrencode]="qrencode" [poppler]="poppler-utils" )
+  [websockify]="python3-websockify" [chromium]="chromium" [fonts]="google-noto-sans-cjk-fonts fontconfig" [qrencode]="qrencode" [poppler]="poppler-utils" [office]="libreoffice-writer" )
 declare -A PKG_apk=( [git]="git" [node]="nodejs" [xclip]="xclip" [curl]="curl bash" [tmux]="tmux" [xvnc]="tigervnc" [wm]="matchbox-wm"
-  [websockify]="py3-websockify" [chromium]="chromium" [fonts]="font-noto-cjk fontconfig" [qrencode]="libqrencode-tools" [poppler]="poppler-utils" )
+  [websockify]="py3-websockify" [chromium]="chromium" [fonts]="font-noto-cjk fontconfig" [qrencode]="libqrencode-tools" [poppler]="poppler-utils" [office]="libreoffice-writer" )
 
 # Ubuntu 的 chromium 是 snap 过渡包，包名不同
 [ "$OS_ID" = "ubuntu" ] && PKG_apt[chromium]="chromium-browser"
 
-ORDER=(curl git node tmux xvnc wm websockify chromium xclip qrencode poppler)
+# office = Word 文件卡片的第一页缩略图（LibreOffice，无界面版）
+ORDER=(curl git node tmux xvnc wm websockify chromium xclip qrencode poppler office)
 # 可选：登录窗口里网页出现中文方块时，传 WITH_CJK_FONTS=1 再装字体
 [ "${WITH_CJK_FONTS:-0}" = "1" ] && ORDER+=(fonts)
 ALL_OK=true

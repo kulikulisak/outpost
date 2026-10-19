@@ -58,7 +58,7 @@ async function fetchFile(abs: string): Promise<Blob> {
 const b64 = (b: Blob) => new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = rej; r.readAsDataURL(b); });
 const thumbCache = new Map<string, Promise<string | null>>();
 const thumbOf = (abs: string, k: string) => {
-  if (!/^(image|pdf)$/.test(k)) return Promise.resolve(null);
+  if (!/^(image|pdf|doc)$/.test(k)) return Promise.resolve(null);
   if (!thumbCache.has(abs)) thumbCache.set(abs, rcc<{ thumb: string | null }>(['thumb', '--path', abs]).then((r) => r.thumb || null).catch(() => null));
   return thumbCache.get(abs)!;
 };

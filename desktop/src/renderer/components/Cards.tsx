@@ -40,7 +40,7 @@ const hue = (s: string) => { let h = 0; for (const c of s) h = (h * 31 + c.charC
 const KIND_COLOR: Record<string, string> = { image: '#0ea5e9', pdf: '#e11d48', sheet: '#16a34a', slides: '#f59e0b', doc: '#2563eb', media: '#a855f7', zip: '#71717a', text: '#52525b' };
 const thumbCache = new Map<string, Promise<string | null>>();
 const thumbOf = (abs: string, k: string) => {
-  if (!/^(image|pdf)$/.test(k)) return Promise.resolve(null);
+  if (!/^(image|pdf|doc)$/.test(k)) return Promise.resolve(null);
   if (!thumbCache.has(abs)) thumbCache.set(abs, rc.x(['thumb', '--path', abs]).then((r: any) => r.thumb || null).catch(() => null));
   return thumbCache.get(abs)!;
 };
