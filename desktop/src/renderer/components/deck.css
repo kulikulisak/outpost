@@ -1,10 +1,12 @@
 /* Cards floating in 3D (shared by desktop and phone) */
-.deck { display: flex; gap: 10px; padding: 22px 16px 12px 20px; perspective: 700px; perspective-origin: 40% 20%; transform-style: preserve-3d; overflow-x: auto; overflow-y: visible; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.deck { display: flex; gap: 0; padding: 38px 28px 16px 24px; overflow-x: auto; overflow-y: visible; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .deck::-webkit-scrollbar { display: none; }
 
-.pslot { flex: none; width: 140px; display: flex; flex-direction: column; gap: 9px; text-align: left; transform-style: preserve-3d; scroll-snap-align: start; cursor: pointer;
+.pslot { flex: none; width: 140px; display: flex; flex-direction: column; gap: 20px; text-align: left; perspective: 560px; position: relative; scroll-snap-align: start; cursor: pointer;
   animation: pc-in .7s cubic-bezier(.22,1,.36,1) backwards; animation-delay: calc(var(--i) * 80ms); }
 .pslot:focus-visible { outline: none; }
+.pslot + .pslot { margin-left: -12px; }
+.pslot:hover { z-index: 9 !important; }
 
 .pcard {
   position: relative; width: 100%; aspect-ratio: 4 / 5; border-radius: 16px; overflow: hidden; isolation: isolate;
@@ -34,7 +36,7 @@
 .pc-shimmer { position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--bg) 70%, transparent) 50%, transparent 70%); background-size: 220% 100%; animation: pc-sh 1.4s linear infinite; }
 @keyframes pc-sh { from { background-position: 120% 0; } to { background-position: -120% 0; } }
 
-.pc-cap { display: flex; flex-direction: column; gap: 2px; padding: 0 4px; min-width: 0; }
+.pc-cap { display: flex; flex-direction: column; gap: 2px; padding: 0 18px 0 6px; min-width: 0; position: relative; z-index: 10; }
 .pc-title { font-size: 12.5px; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -.005em; }
 .pc-badge { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--faint); overflow: hidden; white-space: nowrap; }
 .pc-badge i { width: 5px; height: 5px; border-radius: 50%; flex: none; }
