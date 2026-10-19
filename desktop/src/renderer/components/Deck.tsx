@@ -20,17 +20,15 @@ export interface DeckItem {
 }
 
 // each card leans a different way in space, so the row reads as loose prints, not a grid
-// cards lean against each other in opposite directions, at different heights and depths,
-// like prints tossed on a table: never a neat row
+// big landscape prints, overlapping and staggered up/down, leaning back and turned toward each other
 const POSES = [
-  'rotateY(30deg) rotateX(9deg) rotateZ(-4deg) translateY(4px)',
-  'rotateY(-28deg) rotateX(-7deg) rotateZ(3deg) translateY(-12px) translateZ(24px)',
-  'rotateY(24deg) rotateX(11deg) rotateZ(2deg) translateY(14px) translateZ(-18px)',
-  'rotateY(-32deg) rotateX(5deg) rotateZ(-2.5deg) translateY(-6px) translateZ(10px)',
-  'rotateY(20deg) rotateX(-8deg) rotateZ(3.5deg) translateY(10px)',
+  'rotateX(16deg) rotateY(20deg) rotateZ(-4deg)',
+  'rotateX(12deg) rotateY(-18deg) rotateZ(4deg)',
+  'rotateX(18deg) rotateY(14deg) rotateZ(-2deg)',
+  'rotateX(10deg) rotateY(-22deg) rotateZ(3deg)',
 ];
-const pose = (i: number, n: number) => n === 1 ? 'rotateY(-26deg) rotateX(8deg) rotateZ(2deg)' : POSES[i % POSES.length];
-const lift = (i: number) => [2, 4, 1, 3, 2][i % 5];
+const pose = (i: number, n: number) => n === 1 ? 'rotateX(14deg) rotateY(-16deg) rotateZ(3deg)' : POSES[i % POSES.length];
+const lift = (i: number) => i + 1;
 
 export function Deck({ items }: { items: DeckItem[] }) {
   const [open, setOpen] = useState<{ i: number; from: DOMRect } | null>(null);
@@ -46,11 +44,11 @@ export function Deck({ items }: { items: DeckItem[] }) {
             onClick={(e) => setOpen({ i, from: ((e.currentTarget as HTMLElement).querySelector('.pcard') as HTMLElement).getBoundingClientRect() })}
             title={it.title}
           >
-            <div className={`pcard ${it.wide && it.thumb ? 'wide' : ''}`}><Face it={it} /></div>
-            <div className="pc-cap">
-              <span className="pc-title">{it.title}</span>
-              <span className="pc-badge">{it.icon ? <img src={it.icon} alt="" /> : <i style={{ background: it.color }} />}{it.badge}</span>
+            <div className={`pcard ${it.wide && it.thumb ? 'wide' : ''}`}>
+              <Face it={it} />
+              <span className="pc-chip">{it.icon ? <img src={it.icon} alt="" /> : <i style={{ background: it.color }} />}<b>{it.title}</b></span>
             </div>
+            
           </button>
         ))}
       </div>
