@@ -105,7 +105,7 @@ function start(a) {
   };
   accEnsure(meta.account);
   fs.writeFileSync(metaPath(sid), JSON.stringify(meta, null, 2));
-  const envs = ['HOME', 'PATH', 'RCC_HOME', 'RCC_CLAUDE', 'RCC_PERMISSION_TIMEOUT_MS', 'RCC_MOCK_FIXTURES'].filter((k) => process.env[k] !== undefined).map((k) => `${k}=${shq(process.env[k])}`).join(' ');
+  const envs = ['HOME', 'PATH', 'RCC_HOME', 'RCC_CLAUDE', 'RCC_PERMISSION_TIMEOUT_MS', 'RCC_MOCK_FIXTURES', 'RCC_MOCK_PICS'].filter((k) => process.env[k] !== undefined).map((k) => `${k}=${shq(process.env[k])}`).join(' ');
   const cmd = `env ${envs} ${JSON.stringify(process.execPath)} ${JSON.stringify(SELF)} run ${sid} 2>>${JSON.stringify(path.join(dir(sid), 'runner.log'))}`;
   const r = spawnSync('tmux', ['new-session', '-d', '-s', tmuxName(sid), '-c', cwd, cmd], { encoding: 'utf8' });
   if (r.status !== 0) die(`tmux failed: ${(r.stderr || '').trim()}`);

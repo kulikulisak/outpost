@@ -1,7 +1,7 @@
 // Cards for files Claude made and links it found: floating in 3D like prints on a table.
 // Clicking one opens a dark viewer where the cards sit on a 3D carousel.
 // Pure presentation, shared by the desktop app and the phone app (which imports it via @desktop).
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 export interface DeckAction { label: string; run(): void | Promise<void>; primary?: boolean }
@@ -37,29 +37,80 @@ const pose = (i: number, n: number) => {
 };
 const lift = (i: number, n: number) => n === 3 ? [1, 3, 2][i] : i + 1;
 
+// each card takes its picture's own shape: tall stays tall, wide stays wide, square stays square
+const clampAr = (r: number) => Math.max(0.45, Math.min(2.2, r));
+const fallbackAr = (it: DeckItem) => it.wide ? 1.9 : it.icon || it.glyph ? 1.25 : 0.8;
+function useRatios(items: DeckItem[]) {
+  const [ars, setArs] = useState<Record<string, number>>({});
+  useEffect(() => {
+    let live = true;
+    for (const it of items) {
+      if (!it.thumb || ars[it.key]) continue;
+      const im = new Image();
+      im.onload = () => { if (live && im.naturalWidth) setArs((m) => ({ ...m, [it.key]: clampAr(im.naturalWidth / im.naturalHeight) })); };
+      im.src = it.thumb;
+    }
+    return () => { live = false; };
+  }, [items.map((i) => i.key + ':' + (i.thumb ? i.thumb.length : String(i.thumb))).join('|')]);
+  return (it: DeckItem) => ars[it.key] ?? fallbackAr(it);
+}
+// unit size with the same area for every shape; CSS scales it by --s
+const dims = (ar: number) => ({ ['--sw' as any]: Math.sqrt(ar).toFixed(3), ['--sh' as any]: (1 / Math.sqrt(ar)).toFixed(3) });
+
+// more than three: a loose pile, opened into the viewer to swipe through
+// all layers share the top card's shape so the ones beneath peek out at the edges like a real pile
+const PILE = [
+  'rotateX(12deg) rotateY(-12deg) rotateZ(2deg)',
+  'translateX(-13%) translateY(3%) translateZ(-40px) rotateX(12deg) rotateY(10deg) rotateZ(-8deg)',
+  'translateX(13%) translateY(-4%) translateZ(-80px) rotateX(12deg) rotateY(-22deg) rotateZ(9deg)',
+];
+
 export function Deck({ items }: { items: DeckItem[] }) {
   const [open, setOpen] = useState<{ i: number; from: DOMRect } | null>(null);
+  const arOf = useRatios(items);
   if (!items.length) return null;
+  const card = (it: DeckItem) => (
+    <div className={`pcard ${it.thumb ? 'pic' : ''}`}>
+      <Face it={it} />
+      <span className="pc-chip">{it.icon ? <img src={it.icon} alt="" /> : <i style={{ background: it.color }} />}<b>{it.title}</b></span>
+    </div>
+  );
+  const openFrom = (i: number, e: React.MouseEvent) => setOpen({ i, from: ((e.currentTarget as HTMLElement).querySelector('.pcard') as HTMLElement).getBoundingClientRect() });
+
+  if (items.length > 3) {
+    const top = items.slice(0, 3);
+    const tar = Math.max(0.6, Math.min(1.8, arOf(top[0]))), mw = Math.sqrt(tar), mh = 1 / Math.sqrt(tar);
+    return (
+      <>
+        <div className="deck stack">
+          <button className="pstack" style={{ ['--mw' as any]: mw.toFixed(3), ['--mh' as any]: mh.toFixed(3) }} onClick={(e) => openFrom(0, e)} title={`${items.length} 个`}>
+            {top.map((it, k) => ({ it, k })).reverse().map(({ it, k }) => (
+              <div key={it.key} className="player" style={{ ...dims(tar), ['--i' as any]: 2 - k, ['--pose' as any]: PILE[k], zIndex: 3 - k }}>{card(it)}</div>
+            ))}
+            <span className="pcount">{items.length} 个 · 点开翻看</span>
+          </button>
+        </div>
+        {open && <Viewer items={items} arOf={arOf} start={open.i} from={open.from} onClose={() => setOpen(null)} />}
+      </>
+    );
+  }
+
   return (
     <>
-      <div className={`deck n${Math.min(items.length, 4)} ${items.length === 1 ? 'one' : ''}`}>
+      <div className={`deck n${items.length} ${items.length === 1 ? 'one' : ''}`}>
         {items.map((it, i) => (
           <button
             key={it.key}
             className="pslot"
-            style={{ ['--i' as any]: i, ['--pose' as any]: pose(i, items.length), zIndex: lift(i, items.length) }}
-            onClick={(e) => setOpen({ i, from: ((e.currentTarget as HTMLElement).querySelector('.pcard') as HTMLElement).getBoundingClientRect() })}
+            style={{ ...dims(arOf(it)), ['--i' as any]: i, ['--pose' as any]: pose(i, items.length), zIndex: lift(i, items.length) }}
+            onClick={(e) => openFrom(i, e)}
             title={it.title}
           >
-            <div className={`pcard ${it.wide && it.thumb ? 'wide' : ''}`}>
-              <Face it={it} />
-              <span className="pc-chip">{it.icon ? <img src={it.icon} alt="" /> : <i style={{ background: it.color }} />}<b>{it.title}</b></span>
-            </div>
-            
+            {card(it)}
           </button>
         ))}
       </div>
-      {open && <Viewer items={items} start={open.i} from={open.from} onClose={() => setOpen(null)} />}
+      {open && <Viewer items={items} arOf={arOf} start={open.i} from={open.from} onClose={() => setOpen(null)} />}
     </>
   );
 }
@@ -68,7 +119,7 @@ function Face({ it, big }: { it: DeckItem; big?: boolean }) {
   if (it.thumb) return <img className="pc-img" src={it.thumb} alt="" draggable={false} onLoad={big ? (e) => {
     // in the viewer, the card takes the picture's own shape (within reason)
     const im = e.currentTarget; const ar = im.naturalWidth / im.naturalHeight;
-    if (ar > 0 && !it.wide) im.parentElement?.style.setProperty('--ar', String(Math.max(0.62, Math.min(1.5, ar))));
+    if (ar > 0) im.parentElement?.style.setProperty('--ar', String(clampAr(ar)));
   } : undefined} />;
   return (
     <div className="pc-tile" style={{ ['--c' as any]: it.color }}>
@@ -81,7 +132,7 @@ function Face({ it, big }: { it: DeckItem; big?: boolean }) {
   );
 }
 
-function Viewer({ items, start, from, onClose }: { items: DeckItem[]; start: number; from: DOMRect; onClose(): void }) {
+function Viewer({ items, arOf, start, from, onClose }: { items: DeckItem[]; arOf(it: DeckItem): number; start: number; from: DOMRect; onClose(): void }) {
   const [cur, setCur] = useState(start);
   const [closing, setClosing] = useState(false);
   const [busy, setBusy] = useState('');
@@ -153,8 +204,9 @@ function Viewer({ items, start, from, onClose }: { items: DeckItem[]; start: num
             <div
               key={x.key}
               ref={i === start ? first : undefined}
-              className={`dv-card ${x.wide && x.thumb ? 'wide' : ''} ${d === 0 ? 'on' : ''}`}
+              className={`dv-card ${d === 0 ? 'on' : ''}`}
               style={{
+                ['--ar' as any]: arOf(x),
                 transform: `translateX(calc(-50% + ${d * 68}%)) translateY(-50%) translateZ(${-a * 240}px) rotateY(${-Math.sign(d) * Math.min(a, 2) * 38}deg)`,
                 filter: d ? `blur(${Math.min(a, 2) * 4}px) brightness(.8)` : 'none',
                 opacity: a > 2 ? 0 : d ? 0.6 : 1,

@@ -44,6 +44,16 @@ for await (const line of rl) {
     emit({ type: 'result', subtype: 'success', session_id: sessionId, total_cost_usd: 0.01, modelUsage: { [model]: {} } });
     continue;
   }
+  const pm = text.match(/(一|两|三|多)张图/);
+  if (pm && process.env.RCC_MOCK_PICS) {
+    const all = fs.readdirSync(process.env.RCC_MOCK_PICS).sort();
+    const pick = { 一: ['tall'], 两: ['tall', 'wide'], 三: ['tall', 'square', 'wide'], 多: ['tall', 'square', 'wide', 'phone', 'banner', 'photo'] }[pm[1]];
+    const t = Date.now().toString(36).slice(-4);
+    for (const k of pick) { const f = all.find((x) => x.startsWith(k)); if (f) fs.copyFileSync(`${process.env.RCC_MOCK_PICS}/${f}`, `${k}-${t}.png`); }
+    emit({ type: 'assistant', session_id: sessionId, message: { role: 'assistant', model, content: [{ type: 'text', text: `做好了 ${pick.length} 张图。` }] } });
+    emit({ type: 'result', subtype: 'success', session_id: sessionId, total_cost_usd: 0.01, modelUsage: { [model]: {} } });
+    continue;
+  }
   if (text.includes('报告')) {
     const fx = process.env.RCC_MOCK_FIXTURES;
     if (fx && fs.existsSync(fx)) { for (const f of fs.readdirSync(fx)) fs.copyFileSync(`${fx}/${f}`, f); }
